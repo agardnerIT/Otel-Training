@@ -1,68 +1,15 @@
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# local secrets — filled-in copies of the *.env.sample / *.env.example files.
+# Keep the samples tracked (.env.sample, .env.example); never commit a real .env.
+/.env
+.devcontainer/.env
 
-# Logs
-*.log
-logs/
-nohup.out
+# workshop LLM proxy credential minted by dispense-llm.sh — holds a live key.
+.workshop-llm.env
 
-# Runtime data
-pids/
-*.pid
-*.seed
-*.pid.lock
+# dtctl Agent Skill installed into the repo tree by install-dtctl-skill.sh when
+# the global install path is unavailable (fallback for older dtctl). Generated
+# per-attendee at bootstrap — never commit it.
+.opencode/
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Vegas Casino specific
-vegas-cheat-logs/
-casino.log
-server.log
-vegas-*.log
-loadrunner-results/
-loadrunner-scripts/
-test-*.js
-scripts/
-*.backup
-
-# MkDocs
+# mkdocs build output
 site/
-.mkdocs_cache/
-docs/_build/
-
-# Terraform
-*.tfstate
-*.tfstate.*
-.idea/
-.terraform/
-.terraform.lock.hcl
-terraform.tfstate.d/
-*.tfvars
-!*.tfvars.example
-
-# Temporary helper scripts and guides (not for repository)
-CREATE_PR_GUIDE.md
-PR_TITLE_AND_DESCRIPTION.md
-SECURITY_CLEANUP_GUIDE.md
-cleanup-terraform-state.sh
-push-and-create-pr.sh
-remove-sensitive-files-from-history.sh
-# Generated gRPC/proto Go stubs (produced at Docker build time)
-services/dice/go/proto/

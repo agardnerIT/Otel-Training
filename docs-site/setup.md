@@ -13,23 +13,91 @@ and you can play the casino. Budget 15 minutes; helpers circulate.
 Your Codespace secrets were injected by the organizers. Check they are present:
 
 ```bash
-env | grep -E 'DT_TENANT|DT_API_TOKEN|DT_INGEST_TOKEN|KIND_CLUSTER_NAME' | cut -d= -f1
+env | grep -E 'DT_TENANT|DT_OPERATOR_TOKEN|DT_INGEST_TOKEN|PARTICIPANT_ID' | cut -d= -f1
 ```
 
 Expected output: the four variable **names** (values stay hidden in lists):
 
 ```
 DT_TENANT
-DT_API_TOKEN
+DT_OPERATOR_TOKEN
 DT_INGEST_TOKEN
-KIND_CLUSTER_NAME
+PARTICIPANT_ID
 ```
 
-!!! note "Your cluster name is your identity"
-    Everyone shares one Dynatrace tenant. `KIND_CLUSTER_NAME` is unique per
-    attendee and becomes `k8s.cluster.name` on every piece of telemetry you
-    send. **Always filter Dynatrace by your cluster name** — that is how you
-    see your casino and not your neighbor's.
+!!! note "Renamed from `DT_API_TOKEN`"
+    The operator token is now `DT_OPERATOR_TOKEN`. If your Codespace secret is
+    still named `DT_API_TOKEN`, bring-up continues (the installer accepts it as a
+    deprecated fallback) — but rename the secret when you can. See the full
+    contract in [Environment variables](#environment-variables) below.
+
+!!! note "Your `PARTICIPANT_ID` is your identity"
+    Everyone shares one Dynatrace tenant. `PARTICIPANT_ID` is the one value you
+    set to be unique: it names your kind cluster and becomes `k8s.cluster.name`
+    on every piece of telemetry you send. Keep it DNS-label-safe (lowercase
+    letters, digits, `-` — no spaces or uppercase). **Always filter Dynatrace by
+    your cluster name** — that is how you see your casino and not your
+    neighbor's. (Advanced: `KIND_CLUSTER_NAME` overrides it if you ever need to
+    name the cluster directly; most attendees never set it.)
+
+!!! tip "Advanced track only: check `opencode` works"
+    The [advanced self-paced track](advanced/getting-started.md) drives the
+    `opencode` AI coding agent, wired at start-up to a facilitator-hosted LLM
+    proxy. If you are on that track and set the two `WORKSHOP_*` secrets, confirm
+    the agent and its proxy credential are in place:
+
+    ```bash
+    opencode --version                 # the CLI is baked into the image
+    test -f .workshop-llm.env && echo "proxy credential minted" || \
+      echo "no proxy credential — re-run: bash .devcontainer/bootstrap/dispense-llm.sh"
+    opencode run "reply with the word READY"   # should return a model completion
+    ```
+
+    No `.workshop-llm.env`? Post-create setup skipped the dispense because the
+    `WORKSHOP_*` secrets were absent, or the dispenser was unreachable — see
+    [Troubleshooting](troubleshooting.md#workshop-llm-proxy-opencode). The M0–M5
+    modules do **not** need `opencode`, so you can ignore this on the main track.
+
+## Environment variables
+
+This is the **one canonical contract** for every variable the training consumes.
+`.env.sample` and `.devcontainer/.env.example` mirror it — if anything disagrees,
+this table wins.
+
+| Variable | Type | Consumed by | Required? |
+|---|---|---|---|
+| `DT_TENANT` | Tenant base URL (`https://<id>.live.dynatrace.com`) | Operator (`<DT_TENANT>/api`) **and** OTel collectors (`<DT_TENANT>/api/v2/otlp`) — one URL, two uses | Required for all Dynatrace labs |
+| `DT_OPERATOR_TOKEN` | **Platform token** (`dt0s16`), `fleet-management:*` + `settings:objects:*` scopes | Dynatrace Operator → DynaKube `apiToken` (`deploy/dynatrace/install.sh`) | Required for K8s monitoring (M4) |
+| `DT_INGEST_TOKEN` | **Platform token** (`dt0s16`), `openpipeline:{traces,metrics,logs,events}:ingest` + `storage:metrics:write` | **Two** consumers: OTel collectors' OTLP exporter (`Bearer` header) **and** operator `dataIngestToken` | Required for telemetry export (M3/M5) |
+| `DT_PLATFORM_TOKEN` | Platform token (`dt0s16`) | `dtctl` **only** — never the operator | Optional (dtctl labs) |
+| `DT_PLATFORM_URL` | Gen3 SaaS apps URL (`https://<id>.apps.dynatrace.com`) | `dtctl` on Gen3 SaaS | Optional — derived from `DT_TENANT` when unset |
+| `PARTICIPANT_ID` | DNS-label-safe id | kind cluster name, `k8s.cluster.name`, DynaKube name | Required (blank → `otel-training`, collides in a class) |
+| `KIND_CLUSTER_NAME` | cluster name | advanced override; wins over `PARTICIPANT_ID` | Optional |
+
+!!! warning "The three `DT_*` tokens are all platform tokens but **not** interchangeable"
+    On this Gen3 tenant `DT_OPERATOR_TOKEN`, `DT_INGEST_TOKEN`, and
+    `DT_PLATFORM_TOKEN` are all **platform tokens** (`dt0s16`) — but each carries a
+    **different scope set** and is minted separately: the operator token needs
+    `fleet-management:*` + `settings:objects:*`, the ingest token needs
+    `openpipeline:*:ingest` + `storage:metrics:write`, and `DT_PLATFORM_TOKEN` is
+    used only by `dtctl`. Minting one where another is expected will fail auth.
+    The old single `DT_API_TOKEN` is a deprecated alias for `DT_OPERATOR_TOKEN`
+    only. (The Dynatrace **Operator ≥ 1.10.0** is what accepts platform tokens in
+    the `apiToken`/`dataIngestToken` Secret keys; `install.sh` pins `1.11.1`.)
+
+Two variables below are **not** Dynatrace tokens — they belong to the advanced
+track's `opencode` LLM dispenser (unrelated to the DT tenant):
+
+| Variable | Type | Consumed by | Required? |
+|---|---|---|---|
+| `WORKSHOP_DISPENSER_URL` | URL | `dispense-llm.sh` → `opencode` LLM proxy key | Optional (advanced Step 1 only) |
+| `WORKSHOP_ROOM_PASSWORD` | shared secret (`X-Room-Password`) | `dispense-llm.sh` → dispenser auth | Optional (advanced Step 1 only) |
+
+!!! info "Davis CoPilot / OAuth (optional, not required)"
+    If your cohort runs the optional **Davis CoPilot** exercise it uses a separate
+    Dynatrace **OAuth client** (`dt0s02`), configured in its own
+    [advanced section](advanced/getting-started.md) — it is deliberately kept out
+    of the required token set above. Most attendees do not need it.
 
 ## 2. Verify the kind cluster
 
@@ -37,7 +105,7 @@ KIND_CLUSTER_NAME
 kubectl get nodes
 ```
 
-Expected: one node named `<KIND_CLUSTER_NAME>-control-plane`, status `Ready`.
+Expected: one node named `<PARTICIPANT_ID>-control-plane`, status `Ready`.
 
 ```bash
 kubectl get pods -A
@@ -70,14 +138,14 @@ bash gitops/bootstrap/bootstrap-gitops.sh
 
 2. Sign in with the credentials from your handout.
 3. Go to **Infrastructure → Kubernetes** and confirm a cluster named after your
-   `KIND_CLUSTER_NAME` appears (first appearance can take a few minutes).
+   `PARTICIPANT_ID` appears (first appearance can take a few minutes).
 4. Open **Distributed traces**. You should see a trickle of traces from the
    casino already — the k6 load generator is playing the casino for you. The
    traces will look *broken*. That is intentional; it is Module 1's job.
 
 !!! tip "Filter by your cluster"
     In most Dynatrace views you can add a filter `k8s.cluster.name` =
-    your `KIND_CLUSTER_NAME`. Set it once, save the view — you will use it all
+    your `PARTICIPANT_ID`. Set it once, save the view — you will use it all
     day.
 
 ## 4. Open the GitOps loop

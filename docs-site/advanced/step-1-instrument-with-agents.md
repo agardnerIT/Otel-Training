@@ -38,9 +38,54 @@ Planted gaps:
 
 ## The fix — drive a coding agent
 
-Open the slots service source in your fork and ask your coding agent to add a
-manual span around the draw+payout. The target shape (from
-`after.slots-index.js`):
+The coding agent for this step is **`opencode`**, baked into the Codespace image
+and wired at start-up to the workshop LLM proxy (see
+[Getting started](getting-started.md#1-tokens-you-need) for the two `WORKSHOP_*`
+secrets). It starts in **build mode**, so it can read and edit files in your
+fork directly. Confirm it is ready:
+
+```bash
+opencode --version
+opencode run "reply with the word READY"   # returns a model completion
+```
+
+### Dynatrace Agent Skills (pre-installed)
+
+The Codespace bootstrap also installs the **Dynatrace-for-AI Agent Skills** so
+`opencode` can reason about Dynatrace data in-context — DQL syntax, observability
+patterns, and Kubernetes/cloud topology (38 `dt-*` skills, pinned to a release).
+No action needed; they are copied into opencode's skills directory during
+start-up. Confirm they loaded:
+
+```bash
+bash .devcontainer/bootstrap/verify-opencode-skills.sh   # gate: dt-dql-essentials, dt-obs-kubernetes, …
+opencode debug skill | grep dt-                          # the raw list opencode sees
+```
+
+If they are missing (e.g. GitHub was unreachable at bootstrap — the install is
+non-fatal), re-run `bash .devcontainer/bootstrap/install-opencode-skills.sh`.
+On a machine with Node you can install the same skill set directly with
+`npx skills add Dynatrace/dynatrace-for-ai`.
+
+Clone your casino fork, `cd` into it, and drive `opencode` at the slots service
+source — either interactively (`opencode`, then type the request) or in one
+shot:
+
+```bash
+opencode run "In the vegas-slots-service /spin handler, wrap the draw and payout \
+in a child span 'casino.slots.spin' using @opentelemetry/api. Set attributes \
+casino.game.name, casino.bet.amount, casino.outcome, casino.payout.amount; add a \
+'jackpot' span event on a jackpot; set span error status on failures. Keep the \
+existing response shape."
+```
+
+!!! tip "opencode edits your working tree — review before you commit"
+    In build mode `opencode` writes the change straight into the files. Read the
+    diff it produces, then commit it to your fork so Argo CD redeploys. If the
+    proxy is unreachable or the `WORKSHOP_*` secrets are unset, see
+    [Troubleshooting → Workshop LLM proxy](../troubleshooting.md#workshop-llm-proxy-opencode).
+
+The target shape the agent should converge on (from `after.slots-index.js`):
 
 ```diff
 + const { trace, SpanStatusCode } = require('@opentelemetry/api');
