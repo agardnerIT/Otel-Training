@@ -102,7 +102,13 @@
     // bootstrap scripts derive the cluster name from PARTICIPANT_ID, falling back
     // to otel-training. A hardcoded default here would shadow PARTICIPANT_ID
     // (ISI-7050).
-    "KIND_CLUSTER_NAME": "${localEnv:KIND_CLUSTER_NAME}"
+    "KIND_CLUSTER_NAME": "${localEnv:KIND_CLUSTER_NAME}",
+    // ISI-7530: attendees launch from main, so the FULL training stack must come
+    // up with zero manual steps. Default ON — postCreate chains into
+    // deploy-environment.sh (observability + Dynatrace[SKIP if DT_* absent] +
+    // Gateway API + GitOps casino). A developer wanting only the base cluster
+    // exports FULL_DEPLOY=off on the host; do NOT rely on attendees setting it on.
+    "FULL_DEPLOY": "${localEnv:FULL_DEPLOY:on}"
   },
 
   "customizations": {

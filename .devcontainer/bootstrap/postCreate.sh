@@ -58,6 +58,25 @@ bash "$SCRIPT_DIR/verify-opencode-skills.sh" || {
 log "standing up kind cluster"
 bash "$SCRIPT_DIR/create-cluster.sh"
 
+# FULL_DEPLOY toggle (ISI-6837 / ISI-7530). Attendees launch from main, so the
+# full training stack must come up with ZERO manual steps — hence the default is
+# ON here (and in devcontainer.json remoteEnv). Chaining into the orchestrator
+# brings up observability + Dynatrace (SKIPped when DT_* absent) + Gateway API +
+# GitOps-synced casino. A developer who only wants the base cluster sets
+# FULL_DEPLOY=off in their host/localEnv. Idempotent either way.
+case "${FULL_DEPLOY:-on}" in
+  on|1|true|yes)
+    log "FULL_DEPLOY=${FULL_DEPLOY:-on} — deploying the full training environment"
+    bash "$SCRIPT_DIR/deploy-environment.sh" || {
+      echo "WARN: full deploy reported errors; inspect and re-run:" >&2
+      echo "WARN:   bash .devcontainer/bootstrap/deploy-environment.sh" >&2
+    }
+    ;;
+  *)
+    log "FULL_DEPLOY=${FULL_DEPLOY} — base cluster only (run 'bash .devcontainer/bootstrap/deploy-environment.sh' to deploy the stack)"
+    ;;
+esac
+
 END_TS=$(date +%s)
 ELAPSED=$((END_TS - START_TS))
 {
