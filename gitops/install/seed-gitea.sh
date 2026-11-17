@@ -50,11 +50,28 @@ for i in $(seq 1 30); do
   sleep 2
 done
 if [[ -n "$POD" ]]; then
-  $KUBECTL -n "$GITEA_NS" exec "$POD" -- sh -c \
-    "gitea admin user create --username '$GITEA_ADMIN_USER' --password '$GITEA_ADMIN_PASS' \
-       --email '$GITEA_ADMIN_EMAIL' --admin --must-change-password=false 2>/dev/null \
-     || echo 'user already exists'" \
-    || warn "admin user create exec failed — the HTTP API wait below still gates the seed"
+  # gitea/gitea:1.22.6 runs the container as root, and Gitea *fatally refuses* to
+  # run its CLI as root ("Gitea is not supposed to be run as root"). Exec the CLI
+  # as the image's unprivileged 'git' user (uid 1000) via `su git -c`, and point
+  # it at the baked app.ini explicitly (su may drop GITEA_* env) so it finds the
+  # SQLite DB. The old `sh -c '... || echo user already exists'` ran as root, so
+  # the create ALWAYS failed and the `|| echo` MASKED it — no admin user, so every
+  # subsequent -u attendee:pass API call 401'd and the repo was never created
+  # (ISI-7566). Capture output and distinguish a genuine "already exists"
+  # (idempotent success) from a real failure; never swallow the error.
+  create_rc=0
+  create_out="$($KUBECTL -n "$GITEA_NS" exec "$POD" -- su git -c \
+    "gitea --config /data/gitea/conf/app.ini admin user create \
+       --username '$GITEA_ADMIN_USER' --password '$GITEA_ADMIN_PASS' \
+       --email '$GITEA_ADMIN_EMAIL' --admin --must-change-password=false" 2>&1)" || create_rc=$?
+  if [[ "$create_rc" -eq 0 ]]; then
+    log "admin user '$GITEA_ADMIN_USER' created"
+  elif echo "$create_out" | grep -qiE 'already exist'; then
+    log "admin user '$GITEA_ADMIN_USER' already exists — ok (idempotent)"
+  else
+    warn "admin user create FAILED (rc=$create_rc): ${create_out:-<no output>}"
+    warn "seeding will almost certainly be incomplete; the repo-existence gate in step 3 will surface it loudly and bail non-fatally so a re-run finishes it"
+  fi
 else
   warn "no Gitea pod found after ~60s — skipping in-pod admin create; the HTTP API wait below will gate the seed"
 fi
@@ -75,12 +92,35 @@ if [[ "$API_UP" -ne 1 ]]; then
   exit 1
 fi
 
-# 3) Organisation + repo (ignore 'already exists').
+# 3) Organisation + repo (ignore 'already exists'), then VERIFY the repo is
+# reachable with the admin creds before we try to push. Previously a missing
+# admin user made these -u attendee:pass calls 401 silently (swallowed by
+# `|| true`), and the only symptom was a confusing 404 on the git push five
+# retries later (ISI-7566). Re-checking the repo with a GET turns that into a
+# single loud, actionable WARN and keeps the seed re-runnable.
 log "ensuring org '$CASINO_ORG' and repo '$CASINO_REPO'"
-api -X POST "$GITEA_URL/api/v1/orgs" \
-  -d "{\"username\":\"$CASINO_ORG\"}" >/dev/null 2>&1 || true
-api -X POST "$GITEA_URL/api/v1/orgs/$CASINO_ORG/repos" \
-  -d "{\"name\":\"$CASINO_REPO\",\"default_branch\":\"main\",\"auto_init\":false}" >/dev/null 2>&1 || true
+ensure_org_repo() {
+  api -X POST "$GITEA_URL/api/v1/orgs" \
+    -d "{\"username\":\"$CASINO_ORG\"}" >/dev/null 2>&1 || true
+  api -X POST "$GITEA_URL/api/v1/orgs/$CASINO_ORG/repos" \
+    -d "{\"name\":\"$CASINO_REPO\",\"default_branch\":\"main\",\"auto_init\":false}" >/dev/null 2>&1 || true
+}
+ensure_org_repo
+
+# Confirm the repo exists (GET /repos/org/repo) with admin auth before pushing.
+# Retry create+check a few times to ride out a slow first-settle.
+REPO_OK=0
+for i in $(seq 1 10); do
+  if api "$GITEA_URL/api/v1/repos/$CASINO_ORG/$CASINO_REPO" >/dev/null 2>&1; then REPO_OK=1; break; fi
+  ensure_org_repo
+  sleep 3
+done
+if [[ "$REPO_OK" -ne 1 ]]; then
+  warn "casino repo '$CASINO_ORG/$CASINO_REPO' is NOT reachable with admin creds ($GITEA_ADMIN_USER) — seeding is incomplete."
+  warn "Most likely the admin user was never created (see step 1 above). Argo CD still installs; re-run deploy (idempotent) once Gitea admin auth works to finish seeding."
+  exit 1
+fi
+log "casino repo '$CASINO_ORG/$CASINO_REPO' confirmed reachable with admin creds"
 
 # 4) Push the canonical manifests.
 if [[ ! -d "$CASINO_MANIFESTS_DIR" ]]; then
