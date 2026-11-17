@@ -1,65 +1,126 @@
 {
-	"name": "Vegas Casino Environment",
+  "name": "OTel Training — Perform Hotday (base)",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".",
+    "args": {
+      "KUBECTL_VERSION": "${localEnv:KUBECTL_VERSION:v1.31.2}",
+      "HELM_VERSION": "${localEnv:HELM_VERSION:v3.16.4}",
+      "KIND_VERSION": "${localEnv:KIND_VERSION:v0.25.0}",
+      "ARGOCD_VERSION": "${localEnv:ARGOCD_VERSION:v2.13.2}",
+      "YQ_VERSION": "${localEnv:YQ_VERSION:v4.44.6}",
+      "DTCTL_VERSION": "${localEnv:DTCTL_VERSION:v0.45.0}",
+      "DTCTL_REPO": "${localEnv:DTCTL_REPO:Dynatrace/dtctl}",
+      "OPENCODE_VERSION": "${localEnv:OPENCODE_VERSION:v1.19.5}",
+      "OPENCODE_REPO": "${localEnv:OPENCODE_REPO:sst/opencode}"
+    }
+  },
 
-	// Use a base image that has vscode user pre-configured
-	"image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  // Docker-in-Docker is required so `kind` can run a Kubernetes cluster inside
+  // the codespace. This also pulls in a modern Docker + buildx.
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    },
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": false,
+      "username": "vscode"
+    }
+  },
 
-	"hostRequirements": {
-		"cpus": 4
-	},
+  // One kind cluster per attendee. The control-plane node publishes 80/443 and a
+  // NodePort range to the codespace so Gateway API / ingress work (ISI-6795).
+  "forwardPorts": [80, 443, 8080, 30000, 30001, 30002],
+  "portsAttributes": {
+    "80": { "label": "cluster-http" },
+    "443": { "label": "cluster-https" },
+    "8080": { "label": "app/argocd" }
+  },
 
-	"features": {
-		"ghcr.io/devcontainers/features/node:1": {},
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {
-			"version": "latest",
-			"enableNonRootDocker": "true",
-			"moby": "true"
-		}
-	},
+  // Bootstrap runs once at create time (installs nothing extra — tools are baked
+  // into the image — then stands up the kind cluster and records cold-start time).
+  "onCreateCommand": "bash .devcontainer/bootstrap/postCreate.sh",
+  // postStart re-ensures the cluster is healthy after a codespace stop/resume.
+  "postStartCommand": "bash .devcontainer/bootstrap/postStart.sh",
 
-	// Set the remote user
-	"remoteUser": "vscode",
-	"forwardPorts": [8080],
-	"portsAttributes": {
+  // Per-attendee secrets. In GitHub Codespaces this block drives the "Recommended
+  // secrets" prompt shown when a Codespace is created, with the descriptions
+  // below. (All Codespaces secrets the repo can access are injected into the
+  // container env automatically — this block controls the *recommendation
+  // prompt*, not the injection.) Names MUST equal the env var names the bootstrap
+  // scripts consume (deploy-environment.sh, deploy/dynatrace/install.sh,
+  // observability/install.sh, dispense-llm.sh). The canonical contract +
+  // descriptions are mirrored in .env.sample and .devcontainer/.env.example.
+  // NEVER bake real tokens into the image.
+  "secrets": {
+    "DT_TENANT": {
+      "description": "Dynatrace tenant base URL, e.g. https://abc12345.live.dynatrace.com (operator apiUrl + OTLP ingest derive from this)."
+    },
+    "DT_OPERATOR_TOKEN": {
+      "description": "Dynatrace PLATFORM token (dt0s16) for the operator. Scopes: fleet-management:activegate.connection-info:read, fleet-management:activegate.tokens:create, fleet-management:container-images:read, fleet-management:oneagent.connection-info:read, fleet-management:oneagents:download, settings:objects:read, settings:objects:write."
+    },
+    "DT_INGEST_TOKEN": {
+      "description": "Dynatrace PLATFORM token (dt0s16) for data ingest (collectors + operator dataIngest). Scopes: openpipeline:traces:ingest, openpipeline:metrics:ingest, openpipeline:logs:ingest, openpipeline:events:ingest, storage:metrics:write."
+    },
+    "DT_PLATFORM_TOKEN": {
+      "description": "Dynatrace PLATFORM token (dt0s16) for dtctl."
+    },
+    "PARTICIPANT_ID": {
+      "description": "Your unique DNS-label-safe id (lowercase alphanumeric + '-'); names your kind cluster, k8s.cluster.name, and DynaKube."
+    },
+    "WORKSHOP_DISPENSER_URL": {
+      "description": "LiteLLM dispenser URL for the opencode LLM proxy (advanced track). Provided by the facilitator."
+    },
+    "WORKSHOP_ROOM_PASSWORD": {
+      "description": "LiteLLM dispenser room password (advanced track). Provided by the facilitator."
+    }
+  },
 
-		"8080": { "label": "Gateway HTTP" }
-	},
+  // The `secrets` block above is the authoritative per-attendee contract and the
+  // Codespaces prompt source. The entries here deliver those SAME values to a
+  // LOCAL (non-Codespaces) VS Code devcontainer, where the secrets block does
+  // nothing and ${localEnv:...} forwards the host's exported value (empty ->
+  // scripts fall back cleanly). This is NOT a second source of truth: the value
+  // still originates from the Codespaces secret / the user's host env — remoteEnv
+  // only forwards it into the container. KUBECONFIG and KIND_CLUSTER_NAME are
+  // non-secret operational vars.
+  "remoteEnv": {
+    "DT_TENANT": "${localEnv:DT_TENANT}",
+    "DT_OPERATOR_TOKEN": "${localEnv:DT_OPERATOR_TOKEN}",
+    // DEPRECATED alias: honoured by the scripts as a fallback for a not-yet-renamed
+    // secret. Prefer DT_OPERATOR_TOKEN; kept here so local runs still migrate.
+    "DT_API_TOKEN": "${localEnv:DT_API_TOKEN}",
+    "DT_INGEST_TOKEN": "${localEnv:DT_INGEST_TOKEN}",
+    "DT_PLATFORM_TOKEN": "${localEnv:DT_PLATFORM_TOKEN}",
+    "PARTICIPANT_ID": "${localEnv:PARTICIPANT_ID}",
+    "WORKSHOP_DISPENSER_URL": "${localEnv:WORKSHOP_DISPENSER_URL}",
+    "WORKSHOP_ROOM_PASSWORD": "${localEnv:WORKSHOP_ROOM_PASSWORD}",
+    "KUBECONFIG": "/home/vscode/.kube/config",
+    // Only honoured when the host explicitly sets it; empty otherwise so the
+    // bootstrap scripts derive the cluster name from PARTICIPANT_ID, falling back
+    // to otel-training. A hardcoded default here would shadow PARTICIPANT_ID
+    // (ISI-7050).
+    "KIND_CLUSTER_NAME": "${localEnv:KIND_CLUSTER_NAME}"
+  },
 
-	// Install kind and run your setup scripts
-	"postCreateCommand": "bash -c 'set -e; chmod +x .devcontainer/post_create.sh && chmod +x codespace/configuration/init.sh && chmod +x codespace/deployment.sh && echo \"Running post_create.sh...\" && .devcontainer/post_create.sh && echo \"Running init.sh...\" && codespace/configuration/init.sh && echo \"Running deployment.sh...\" && codespace/deployment.sh'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "redhat.vscode-yaml",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
 
-	// Add recommended secrets
-	"secrets": {
-		"DT_TENANT": {
-			"description": "Dynatrace tenant base URL, e.g. https://abc12345.live.dynatrace.com."
-		},
-		"DT_OPERATOR_TOKEN": {
-			"description": "Dynatrace PLATFORM token (dt0s16), operator scopes: fleet-management:{activegate.connection-info:read, activegate.tokens:create, container-images:read, oneagent.connection-info:read, oneagents:download}, settings:objects:{read,write}."
-		},
-		"DT_INGEST_TOKEN": {
-			"description": "Dynatrace PLATFORM token (dt0s16), data ingest: openpipeline:{traces,metrics,logs,events}:ingest + storage:metrics:write."
-		},
-		"DT_PLATFORM_TOKEN": {
-			"description": "Dynatrace PLATFORM token (dt0s16) for dtctl."
-		},
-		"PARTICIPANT_ID": {
-			"description": "Your unique DNS-label-safe id; names kind cluster, k8s.cluster.name, DynaKube."
-		},
-		"WORKSHOP_DISPENSER_URL": {
-			"description": "LiteLLM dispenser URL (advanced track / opencode) — from facilitator."
-		},
-		"WORKSHOP_ROOM_PASSWORD": {
-			"description": "LiteLLM dispenser room password (advanced track) — from facilitator."
-		}
-	},
-
-	// Add Kubernetes VSCode extensions
-	"customizations": {
-		"vscode": {
-			"extensions": [
-				"ms-kubernetes-tools.vscode-kubernetes-tools",
-				"redhat.vscode-yaml"
-			]
-		}
-	}
+  "remoteUser": "vscode",
+  // kind + the casino + collectors + operators need headroom. Request a 4-core
+  // machine for codespaces that support hostRequirements.
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  }
 }

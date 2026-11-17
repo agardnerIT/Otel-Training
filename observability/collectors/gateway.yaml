@@ -1,0 +1,166 @@
+# Gateway (deployment-mode) collector — the cluster's telemetry aggregation tier.
+#
+# Pipeline contract (ISI-6792, and the reference "correct" order for M3's
+# planted-defect hunt — compare labs/defects.md #5):
+#   memory_limiter FIRST -> k8sattributes -> cumulativetodelta (metrics only) -> batch LAST
+#
+# Receives OTLP (gRPC+HTTP) from the DaemonSet logs collector and from
+# instrumented apps, enriches with Kubernetes metadata, converts cumulative
+# sum temporality to delta on counters, and exports to Dynatrace via OTLP.
+#
+# NOTE on `${env:...}`: the OTel Operator (v0.162, v1beta1 CRs) passes
+# spec.config through to the collector ConfigMap VERBATIM — it does not expand
+# `$`-expressions. `${env:FOO}` therefore reaches the collector unescaped and
+# is resolved at runtime from the container env (spec.env below). The older
+# `$${env:FOO}` double-escaping advice is obsolete and silently breaks
+# expansion (found live in ISI-6806: the collector treats `$$` as an escaped
+# literal, never expands, and the exporter dies with "endpoint must be a valid
+# URL" — while offline validation that manually un-escapes keeps passing).
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-gateway
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: otel-gateway
+    app.kubernetes.io/component: gateway-collector
+spec:
+  mode: deployment
+  replicas: 1
+  image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.164.0
+  # Dynatrace tenant URL + OTLP ingest token come from the dynatrace-otel
+  # Secret — created by install.sh from the attendee's DT_TENANT /
+  # DT_INGEST_TOKEN env. Never committed.
+  # NOTE (ISI-6806 live finding): use spec.env with secretKeyRef. spec.envFrom
+  # exists on the CRD but the rendered pod never received the vars with it —
+  # the exporter then failed with "endpoint must be a valid URL".
+  env:
+    - name: DT_TENANT
+      valueFrom:
+        secretKeyRef:
+          name: dynatrace-otel
+          key: DT_TENANT
+    - name: DT_INGEST_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: dynatrace-otel
+          key: DT_INGEST_TOKEN
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  config:
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      # 1. memory_limiter must always be the first processor: it protects the
+      #    collector itself and must sit ahead of anything that can fan out work.
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+      # 2. k8sattributes: we are in Kubernetes, so enrichment happens here at
+      #    the aggregation tier. Association order: attributes forwarded by the
+      #    DaemonSet (k8s.pod.name/k8s.namespace.name), then the upstream
+      #    connection IP, then any explicit k8s.pod.ip resource attribute.
+      k8sattributes:
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.pod.start_time
+            - k8s.deployment.name
+            - k8s.replicaset.name
+            - k8s.node.name
+            - k8s.container.name
+            - container.image.name
+            - container.image.tag
+          labels:
+            - tag_name: k8s.app.label.name
+              key: app.kubernetes.io/name
+              from: pod
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.name
+              - from: resource_attribute
+                name: k8s.namespace.name
+          - sources:
+              - from: connection
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.ip
+      # 3. cumulativetodelta: counters arrive cumulative from most SDKs and the
+      #    platform; Dynatrace ingests them better as deltas (rate semantics).
+      #    Applies to the metrics pipeline only — the processor does not
+      #    support traces/logs signals.
+      cumulativetodelta: {}
+      # 4. batch must always be the last processor before export.
+      batch:
+        timeout: 5s
+        send_batch_size: 512
+        send_batch_max_size: 1024
+
+    exporters:
+      # otlphttp (not gRPC otlp): Dynatrace's OTLP ingest is an HTTP endpoint
+      # with a path (`/api/v2/otlp`), and the collector appends
+      # /v1/{traces,metrics,logs} to this base endpoint.
+      otlphttp/dynatrace:
+        endpoint: ${env:DT_TENANT}/api/v2/otlp
+        headers:
+          # DT_INGEST_TOKEN is a PLATFORM token (dt0s16) on this Gen3 tenant, so
+          # the OTLP endpoint expects `Bearer <token>` — NOT the classic
+          # `Api-Token <token>` header (that is only for dt0c01 access tokens).
+          # Required platform scopes: openpipeline:{traces,metrics,logs,events}:ingest
+          # + storage:metrics:write. See docs-site/setup.md "Environment variables".
+          Authorization: "Bearer ${env:DT_INGEST_TOKEN}"
+        tls:
+          # GOTCHA (found in live verification, ISI-6806): `insecure_skip_verify`
+          # is a bool field — the collector's config decoder rejects env-expanded
+          # strings ("expected type 'bool', got unconvertible type 'string'"),
+          # and `otelcol validate` does NOT catch it (validate passed, the real
+          # collector crash-looped). Bool fields must be literals. For private-CA
+          # Dynatrace endpoints, mount the CA and set `ca_file` instead — string
+          # fields accept `${env:...}` expansion.
+          insecure_skip_verify: false
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 512
+
+    service:
+      extensions:
+        - health_check
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [otlphttp/dynatrace]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, cumulativetodelta, batch]
+          exporters: [otlphttp/dynatrace]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [otlphttp/dynatrace]
+      telemetry:
+        logs:
+          level: info

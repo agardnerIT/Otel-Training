@@ -1,10 +1,8 @@
 name: docs
 
-# CI gate for the MkDocs attendee guide: strict build + verify mermaid renders
-# in both the default (light) and slate (dark) palettes. This workflow does NOT
-# deploy — GitHub Pages publishing is owned solely by gh-pages.yml (ISI-6939),
-# so there is exactly one Pages-publishing workflow and no `pages`
-# concurrency-group conflict. ISI-6929 (ISI-6913 §3/§6).
+# Build the MkDocs attendee guide, verify mermaid renders in both the default
+# (light) and slate (dark) palettes, and deploy to GitHub Pages from main.
+# ISI-6929 (ISI-6913 §3/§6).
 
 on:
   push:
@@ -64,3 +62,22 @@ jobs:
           name: site
           path: site/
           retention-days: 7
+
+  deploy:
+    # Publish to GitHub Pages only from main, after the build+render gate passes.
+    needs: build-and-verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+      - name: Install docs dependencies
+        run: pip install -r requirements-docs.txt
+      - name: Deploy to GitHub Pages
+        run: mkdocs gh-deploy --force
