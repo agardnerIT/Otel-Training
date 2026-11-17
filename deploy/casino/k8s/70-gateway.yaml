@@ -2,11 +2,11 @@
 # lets attendees play the app (and drive load) from a browser outside the
 # devcontainer.
 #
-# It binds the `nginx` GatewayClass installed as cluster infra by
-# deploy/gateway/install.sh (NGINX Gateway Fabric). When this Gateway is
-# applied, NGF provisions an nginx data-plane Deployment + a NodePort Service in
-# THIS namespace; the NginxProxy override pins the :80 listener to NodePort
-# 30000 (see deploy/gateway/manifests/nginxproxy-nodeport.yaml). kind maps node
+# It binds the `kgateway` GatewayClass installed as cluster infra by
+# deploy/gateway/install.sh (kgateway — CNCF, Envoy-based, ISI-7546). When this
+# Gateway is applied, kgateway provisions an Envoy data-plane Deployment + a
+# Service in THIS namespace. The referenced GatewayParameters
+# (72-gatewayparameters.yaml) pins that Service to NodePort 30000. kind maps node
 # 30000 -> host 30000 and the devcontainer forwards it, so the casino is at the
 # attendee's forwarded :30000 URL.
 #
@@ -29,7 +29,15 @@ metadata:
     app.kubernetes.io/managed-by: argocd
     app.kubernetes.io/component: gateway
 spec:
-  gatewayClassName: nginx
+  gatewayClassName: kgateway
+  # Pin the kgateway-provisioned proxy Service to NodePort 30000. parametersRef
+  # is namespace-local, so the GatewayParameters lives in this namespace
+  # (72-gatewayparameters.yaml).
+  infrastructure:
+    parametersRef:
+      group: gateway.kgateway.dev
+      kind: GatewayParameters
+      name: casino-nodeport
   listeners:
     - name: http
       port: 80
