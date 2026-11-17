@@ -32,9 +32,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Dynatrace Operator Helm chart (OCI). Pin a version; confirm the latest at
 # https://github.com/Dynatrace/dynatrace-operator/releases and bump as needed.
 DT_OPERATOR_CHART="${DT_OPERATOR_CHART:-oci://public.ecr.aws/dynatrace/dynatrace-operator}"
-# 1.11.1 >= 1.10.0, the first release to accept PLATFORM tokens (dt0s16) in the
-# apiToken/dataIngestToken Secret keys. Do not drop below 1.10.0 or platform
-# tokens will fail validation.
+# 1.11.1 is the LATEST STABLE operator release (confirmed against GitHub releases,
+# 2026-11; 1.11.0 and the 1.10.x/1.9.x lines are older). It is also >= 1.10.0, the
+# first release to accept PLATFORM tokens (dt0s16) in the apiToken/dataIngestToken
+# Secret keys and to auto-enable public-registry image resolution for a platform
+# token. Do not drop below 1.10.0 or platform tokens will fail validation. When a
+# newer stable release ships, bump this pin (override with DT_OPERATOR_VERSION).
 DT_OPERATOR_VERSION="${DT_OPERATOR_VERSION:-1.11.1}"
 DT_NAMESPACE="${DT_NAMESPACE:-dynatrace}"
 # Per-attendee DynaKube / Secret name. Defaults to the kind cluster name so the
