@@ -115,6 +115,45 @@ render_dynakube() {
 }
 render_dynakube | kubectl apply -f -
 
+# --- 5b. Recover a stuck ActiveGate on re-run -------------------------------
+# If the AG StatefulSet already exists (re-run / upgrade), the operator updates
+# its pod template image when a registry-affecting change lands (e.g. the
+# ISI-7553 use-public-registry annotation). A pod already wedged in
+# Init:ImagePullBackOff from the OLD image ref can stay stuck on a cached bad
+# pull, so force a rollout restart to pull the freshly-resolved image. No-op on
+# a first install (the StatefulSet does not exist yet).
+AG_STS="${DYNAKUBE_NAME}-activegate"
+if kubectl -n "$DT_NAMESPACE" get statefulset "$AG_STS" >/dev/null 2>&1; then
+  not_running=$(kubectl -n "$DT_NAMESPACE" get pod "${AG_STS}-0" \
+    -o jsonpath='{.status.phase}' 2>/dev/null || true)
+  if [ "$not_running" != "Running" ]; then
+    log "ActiveGate StatefulSet exists but ${AG_STS}-0 is '${not_running:-absent}'; restarting to pick up the resolved image ref"
+    kubectl -n "$DT_NAMESPACE" rollout restart statefulset "$AG_STS" || true
+  fi
+fi
+
+# --- ActiveGate diagnostic (ground truth, no manual paste needed) -----------
+# Prints the EXACT image refs + pull error so a failure is self-documenting.
+# This is the executable answer to ISI-7565: the registry host of the init and
+# main AG images, the live use-public-registry annotation, the init container's
+# waiting reason/message (manifest-not-found vs auth vs timeout), and events.
+ag_diag() {
+  echo "----- ActiveGate diagnostic -------------------------------------------" >&2
+  echo "[dynakube] use-public-registry annotation on the LIVE object:" >&2
+  kubectl -n "$DT_NAMESPACE" get dynakube "$DYNAKUBE_NAME" \
+    -o jsonpath='{.metadata.annotations.feature\.dynatrace\.com/use-public-registry}' 2>/dev/null >&2 \
+    && echo >&2 || echo "  <annotation ABSENT on live DynaKube — fix not applied>" >&2
+  echo "[statefulset] resolved image refs (registry host tells public vs tenant):" >&2
+  kubectl -n "$DT_NAMESPACE" get statefulset "$AG_STS" \
+    -o jsonpath='  init : {.spec.template.spec.initContainers[*].image}{"\n"}  main : {.spec.template.spec.containers[*].image}{"\n"}' 2>/dev/null >&2 || true
+  echo "[pod] ${AG_STS}-0 init-container waiting reason/message (the pull error):" >&2
+  kubectl -n "$DT_NAMESPACE" get pod "${AG_STS}-0" \
+    -o jsonpath='{range .status.initContainerStatuses[*]}  {.name}: {.state.waiting.reason} — {.state.waiting.message}{"\n"}{end}' 2>/dev/null >&2 || true
+  echo "[events] last 15 in $DT_NAMESPACE:" >&2
+  kubectl -n "$DT_NAMESPACE" get events --sort-by=.lastTimestamp 2>/dev/null | tail -15 >&2 || true
+  echo "-----------------------------------------------------------------------" >&2
+}
+
 # --- 6. Wait for health -----------------------------------------------------
 log "waiting for operator deployment to be available"
 kubectl -n "$DT_NAMESPACE" rollout status deploy/dynatrace-operator --timeout=180s || true
@@ -123,15 +162,22 @@ log "waiting for ActiveGate statefulset (kubernetes-monitoring) to appear"
 # The operator creates the ActiveGate StatefulSet asynchronously after the
 # DynaKube is accepted; give it a moment, then wait on the pod.
 for i in $(seq 1 30); do
-  if kubectl -n "$DT_NAMESPACE" get statefulset "${DYNAKUBE_NAME}-activegate" >/dev/null 2>&1; then
+  if kubectl -n "$DT_NAMESPACE" get statefulset "$AG_STS" >/dev/null 2>&1; then
     break
   fi
   sleep 5
 done
-kubectl -n "$DT_NAMESPACE" rollout status statefulset "${DYNAKUBE_NAME}-activegate" --timeout=240s || {
-  err "ActiveGate not ready yet. Inspect with:"
-  err "  kubectl -n $DT_NAMESPACE get pods"
-  err "  kubectl -n $DT_NAMESPACE describe dynakube $DYNAKUBE_NAME"
+kubectl -n "$DT_NAMESPACE" rollout status statefulset "$AG_STS" --timeout=240s || {
+  err "ActiveGate not ready. Capturing ground-truth diagnostic:"
+  ag_diag
+  err "Reading the diagnostic above:"
+  err "  * annotation ABSENT   -> fix not applied: 'git pull origin main' + re-run this script,"
+  err "                           or recreate the codespace from the latest main."
+  err "  * image host = *.live.dynatrace.com (tenant) while annotation is present"
+  err "                        -> operator has not resolved the public image yet; wait ~1-2 min"
+  err "                           then re-run, or 'kubectl -n $DT_NAMESPACE rollout restart statefulset $AG_STS'."
+  err "  * image host = public.ecr.aws but still failing -> paste the diagnostic to ISI-7565"
+  err "                           (manifest-not-found = arch/tag, 401/403 = auth, timeout = egress)."
   exit 1
 }
 
