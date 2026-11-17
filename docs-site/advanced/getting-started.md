@@ -7,10 +7,12 @@ Dynatrace-solution GitLab, and a Codespace starting against that fork. Budget
 !!! info "This is the advanced self-paced track"
     These pages sit **alongside** the facilitator-led modules M0–M5, not in
     place of them. Where M0–M5 walk one planted defect at a time with a helper
-    in the room, this track is a self-paced sequence of six larger exercises —
-    instrumentation, a semantic-convention guard, cost, cardinality, PII, and
-    sampling. Each step is step-by-step and ends with a Dynatrace validation
-    checkpoint you run yourself.
+    in the room, this track is a self-paced sequence of seven larger exercises
+    (plus a Step 0 warmup) — instrumentation, business metrics, a
+    semantic-convention guard, cost, cardinality, PII, and sampling. Every step
+    follows one pattern — the **Problem → Opencode → Verify** loop, where you
+    drive the `opencode` AI coding agent to produce each fix — and ends with a
+    Dynatrace validation checkpoint you run yourself.
 
 ## 1. Tokens you need
 

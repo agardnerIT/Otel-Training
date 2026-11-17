@@ -8,16 +8,22 @@ the canonical, correct gateway collector at
 (the "known-good baseline" — memory_limiter first, batch last, k8sattributes for the
 Kubernetes cluster).
 
+Step numbers below are the **attendee-facing** sequence (ISI-7564 opencode-first
+rewrite: Step 0 warmup + Step 2 business metrics inserted, later steps renumbered).
+Folder names keep their original numbering as stable asset paths.
+
 | Step | Concept | Asset kind | Runnable here? | Folder |
 |------|---------|-----------|----------------|--------|
 | 1 | Agent-driven instrumentation | App code diff (Node/Java casino services) | Applied to casino repo | [`step1-agent-instrumentation/`](step1-agent-instrumentation/) |
-| 2 | Weaver — semconv regression guard | Weaver registry + policies + CI workflow | ✅ `weaver registry check` | [`step2-weaver-semconv/`](step2-weaver-semconv/) |
-| 3 | Cost of observability | Collector `resource` processor → `dt.cost.*` | ✅ `kubectl apply` | [`step3-cost-center/`](step3-cost-center/) |
-| 4 | High-cardinality metrics | Collector `transform`/`filter` processor | ✅ `kubectl apply` | [`step4-high-cardinality/`](step4-high-cardinality/) |
-| 5 | PII in logs → BindPlane | `redaction`/`transform` + OpAMP bridge CR | ✅ `kubectl apply` | [`step5-pii-redaction/`](step5-pii-redaction/) |
-| 6 | Tail sampling | Collector `tail_sampling` processor | ✅ `kubectl apply` | [`step6-tail-sampling/`](step6-tail-sampling/) |
+| 2 | Agent-driven business metrics | App code diff (counter + histogram, Node slots) | Applied to casino repo | [`step-business-metrics/`](step-business-metrics/) |
+| 3 | Weaver — semconv regression guard | Weaver registry + policies + CI workflow | ✅ `weaver registry check` | [`step2-weaver-semconv/`](step2-weaver-semconv/) |
+| 4 | Cost of observability | Collector `resource` processor → `dt.cost.*` | ✅ `kubectl apply` | [`step3-cost-center/`](step3-cost-center/) |
+| 5 | High-cardinality metrics | Collector `transform`/`filter` processor | ✅ `kubectl apply` | [`step4-high-cardinality/`](step4-high-cardinality/) |
+| 6 | PII in logs → BindPlane | `redaction`/`transform` + OpAMP bridge CR | ✅ `kubectl apply` | [`step5-pii-redaction/`](step5-pii-redaction/) |
+| 7 | Tail sampling | Collector `tail_sampling` processor | ✅ `kubectl apply` | [`step6-tail-sampling/`](step6-tail-sampling/) |
 
-The fully composed end-state gateway (all collector fixes 3+4+5+6 wired in the correct
+The fully composed end-state gateway (all collector fixes — cost + cardinality + PII +
+tail sampling, attendee Steps 4–7 — wired in the correct
 processor order) is [`gateway-advanced.yaml`](gateway-advanced.yaml). Attendees reach it
 incrementally; facilitators can apply it directly.
 
