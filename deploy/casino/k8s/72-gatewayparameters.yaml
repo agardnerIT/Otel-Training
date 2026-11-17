@@ -1,0 +1,45 @@
+# GatewayParameters for the casino (ISI-6795 / ISI-7546) — pins the kgateway
+# data-plane proxy Service to NodePort 30000 so attendees can reach the casino
+# from outside the devcontainer.
+#
+# kgateway provisions an Envoy proxy Deployment + Service in THIS (casino)
+# namespace when the casino Gateway is applied. By default that Service is a
+# LoadBalancer, which never gets an address on a bare kind cluster (no cloud LB
+# / MetalLB) — so the casino would be unreachable. This GatewayParameters
+# switches it to NodePort and pins the :80 listener to NodePort 30000:
+#   * `ports[].port: 80`      matches the Gateway's HTTP listener port.
+#   * `ports[].nodePort: 30000` is the stable NodePort kind maps to host 30000
+#                               and devcontainer.json forwards.
+#
+# The casino Gateway (70-gateway.yaml) references this object by name via
+# spec.infrastructure.parametersRef. parametersRef is namespace-local, so this
+# MUST live in the casino namespace alongside the Gateway (it replaces NGF's
+# cluster-default NginxProxy override, which lived in cluster infra). Keeping it
+# here means it is Argo-owned: the edit -> commit -> auto-sync lab mechanic
+# covers the exposure config too, not just routing.
+#
+# NodePort must stay 30000: kind maps it, the devcontainer forwards it, and the
+# ISI-7532 port labels + Argo (30002) / Gitea (30001) allocations depend on it.
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: GatewayParameters
+metadata:
+  name: casino-nodeport
+  namespace: casino
+  labels:
+    app.kubernetes.io/name: vegas-casino
+    app.kubernetes.io/instance: vegas-casino
+    app.kubernetes.io/part-of: casino
+    app.kubernetes.io/managed-by: argocd
+    app.kubernetes.io/component: gateway
+spec:
+  kube:
+    service:
+      # NodePort instead of the LoadBalancer default (kind has no cloud LB).
+      type: NodePort
+      # Preserve the client source IP where the single kind node schedules the
+      # data-plane pod.
+      externalTrafficPolicy: Local
+      # Pin the Gateway's :80 HTTP listener to a stable, forwarded NodePort.
+      ports:
+        - port: 80
+          nodePort: 30000

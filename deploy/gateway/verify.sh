@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 source "${HERE}/versions.env"
 
 NS="${CASINO_NS:-casino}"
-NGF_NS="${NGF_NS:-nginx-gateway}"
+KGW_NS="${KGW_NS:-kgateway-system}"
 NODEPORT="${CASINO_HTTP_NODEPORT:-30000}"
 STAMP="${STAMP:-manual}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$HERE/evidence}"
@@ -29,7 +29,7 @@ EVIDENCE="$EVIDENCE_DIR/verify-gateway-${STAMP}.txt"
 CASINO_K8S="${REPO_ROOT}/deploy/casino/k8s"
 GATEWAY_YAML="${CASINO_K8S}/70-gateway.yaml"
 HTTPROUTE_YAML="${CASINO_K8S}/71-httproute.yaml"
-NGINXPROXY_YAML="${HERE}/manifests/nginxproxy-nodeport.yaml"
+GATEWAYPARAMS_YAML="${CASINO_K8S}/72-gatewayparameters.yaml"
 
 PASS=0; FAIL=0
 pass() { echo "[PASS] $*" | tee -a "$EVIDENCE"; PASS=$((PASS+1)); }
@@ -38,31 +38,33 @@ info() { echo "       $*" | tee -a "$EVIDENCE"; }
 hdr()  { echo | tee -a "$EVIDENCE"; echo "=== $* ===" | tee -a "$EVIDENCE"; }
 
 echo "Gateway API casino exposure verification — ISI-6795" > "$EVIDENCE"
-info "casino namespace : $NS"
-info "NGF namespace    : $NGF_NS"
-info "NodePort         : $NODEPORT"
+info "casino namespace   : $NS"
+info "kgateway namespace : $KGW_NS"
+info "NodePort           : $NODEPORT"
 info "evidence file    : $EVIDENCE"
 
 # --- Offline manifest structural checks (always run) ------------------------
 hdr "0. Manifests present + well-formed (offline)"
-for f in "$GATEWAY_YAML" "$HTTPROUTE_YAML" "$NGINXPROXY_YAML"; do
+for f in "$GATEWAY_YAML" "$HTTPROUTE_YAML" "$GATEWAYPARAMS_YAML"; do
   [[ -f "$f" ]] && pass "manifest exists: ${f#$REPO_ROOT/}" || fail "missing manifest: ${f#$REPO_ROOT/}"
 done
 
 check() { # file, grep-pattern, human description
   if grep -Eq "$2" "$1" 2>/dev/null; then pass "$3"; else fail "$3"; fi
 }
-check "$GATEWAY_YAML"    '^kind: Gateway$'                       "70-gateway.yaml declares a Gateway"
-check "$GATEWAY_YAML"    'gatewayClassName:[[:space:]]*nginx'    "Gateway binds GatewayClass 'nginx'"
-check "$GATEWAY_YAML"    'protocol:[[:space:]]*HTTP'             "Gateway has an HTTP listener"
-check "$HTTPROUTE_YAML"  '^kind: HTTPRoute$'                     "71-httproute.yaml declares an HTTPRoute"
-check "$HTTPROUTE_YAML"  'name:[[:space:]]*vegas-casino-frontend' "HTTPRoute backends the frontend Service"
-check "$HTTPROUTE_YAML"  'port:[[:space:]]*3000'                 "HTTPRoute targets frontend port 3000"
-check "$NGINXPROXY_YAML" 'type:[[:space:]]*NodePort'             "NginxProxy exposes the data plane as NodePort"
-check "$NGINXPROXY_YAML" "port:[[:space:]]*${NODEPORT}"          "NginxProxy pins NodePort ${NODEPORT}"
+check "$GATEWAY_YAML"       '^kind: Gateway$'                          "70-gateway.yaml declares a Gateway"
+check "$GATEWAY_YAML"       'gatewayClassName:[[:space:]]*kgateway'    "Gateway binds GatewayClass 'kgateway'"
+check "$GATEWAY_YAML"       'protocol:[[:space:]]*HTTP'                "Gateway has an HTTP listener"
+check "$GATEWAY_YAML"       'kind:[[:space:]]*GatewayParameters'       "Gateway references GatewayParameters via parametersRef"
+check "$HTTPROUTE_YAML"     '^kind: HTTPRoute$'                        "71-httproute.yaml declares an HTTPRoute"
+check "$HTTPROUTE_YAML"     'name:[[:space:]]*vegas-casino-frontend'   "HTTPRoute backends the frontend Service"
+check "$HTTPROUTE_YAML"     'port:[[:space:]]*3000'                    "HTTPRoute targets frontend port 3000"
+check "$GATEWAYPARAMS_YAML" '^kind: GatewayParameters$'               "72-gatewayparameters.yaml declares GatewayParameters"
+check "$GATEWAYPARAMS_YAML" 'type:[[:space:]]*NodePort'               "GatewayParameters exposes the data plane as NodePort"
+check "$GATEWAYPARAMS_YAML" "nodePort:[[:space:]]*${NODEPORT}"        "GatewayParameters pins NodePort ${NODEPORT}"
 
 # If kubeconform is on PATH, use it for real schema validation of the stable
-# Gateway API kinds (NginxProxy is a vendor CRD; skip it there).
+# Gateway API kinds (GatewayParameters is a vendor CRD; skip it there).
 if command -v kubeconform >/dev/null 2>&1; then
   if kubeconform -strict -ignore-missing-schemas "$GATEWAY_YAML" "$HTTPROUTE_YAML" >>"$EVIDENCE" 2>&1; then
     pass "kubeconform: Gateway + HTTPRoute schema-valid"
@@ -96,22 +98,25 @@ for crd in gateways.gateway.networking.k8s.io httproutes.gateway.networking.k8s.
            gatewayclasses.gateway.networking.k8s.io; do
   kubectl get crd "$crd" >/dev/null 2>&1 && pass "CRD present: $crd" || fail "CRD missing: $crd"
 done
-if kubectl -n "$NGF_NS" get deploy nginx-gateway >/dev/null 2>&1; then
-  ready=$(kubectl -n "$NGF_NS" get deploy nginx-gateway -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
-  [[ "${ready:-0}" -ge 1 ]] && pass "NGF controller ready (${ready} replica)" || fail "NGF controller not ready"
+if kubectl -n "$KGW_NS" get deploy kgateway >/dev/null 2>&1; then
+  ready=$(kubectl -n "$KGW_NS" get deploy kgateway -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+  [[ "${ready:-0}" -ge 1 ]] && pass "kgateway controller ready (${ready} replica)" || fail "kgateway controller not ready"
 else
-  fail "NGF controller deployment not found — run deploy/gateway/install.sh"
+  fail "kgateway controller deployment not found — run deploy/gateway/install.sh"
 fi
-gc_status=$(kubectl get gatewayclass nginx -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' 2>/dev/null)
-[[ "$gc_status" == "True" ]] && pass "GatewayClass 'nginx' Accepted" || fail "GatewayClass 'nginx' not Accepted (got '${gc_status:-none}')"
+kubectl get crd gatewayparameters.gateway.kgateway.dev >/dev/null 2>&1 \
+  && pass "kgateway CRD present: gatewayparameters.gateway.kgateway.dev" \
+  || fail "kgateway CRD missing: gatewayparameters.gateway.kgateway.dev — run deploy/gateway/install.sh"
+gc_status=$(kubectl get gatewayclass kgateway -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' 2>/dev/null)
+[[ "$gc_status" == "True" ]] && pass "GatewayClass 'kgateway' Accepted" || fail "GatewayClass 'kgateway' not Accepted (got '${gc_status:-none}')"
 
-hdr "2. NodePort override applied"
-np=$(kubectl get nginxproxy nginx-gateway-proxy-config -n "$NGF_NS" \
-  -o jsonpath='{.spec.kubernetes.service.nodePorts[0].port}' 2>/dev/null)
-sty=$(kubectl get nginxproxy nginx-gateway-proxy-config -n "$NGF_NS" \
-  -o jsonpath='{.spec.kubernetes.service.type}' 2>/dev/null)
-[[ "$sty" == "NodePort" ]] && pass "NginxProxy service type is NodePort" || fail "NginxProxy service type is '${sty:-none}' (expected NodePort)"
-[[ "$np" == "$NODEPORT" ]] && pass "NginxProxy pins NodePort $NODEPORT" || fail "NginxProxy NodePort is '${np:-none}' (expected $NODEPORT)"
+hdr "2. NodePort pinned via GatewayParameters (casino namespace)"
+np=$(kubectl -n "$NS" get gatewayparameters casino-nodeport \
+  -o jsonpath='{.spec.kube.service.ports[0].nodePort}' 2>/dev/null)
+sty=$(kubectl -n "$NS" get gatewayparameters casino-nodeport \
+  -o jsonpath='{.spec.kube.service.type}' 2>/dev/null)
+[[ "$sty" == "NodePort" ]] && pass "GatewayParameters service type is NodePort" || fail "GatewayParameters service type is '${sty:-none}' (expected NodePort)"
+[[ "$np" == "$NODEPORT" ]] && pass "GatewayParameters pins NodePort $NODEPORT" || fail "GatewayParameters NodePort is '${np:-none}' (expected $NODEPORT)"
 
 hdr "3. Casino Gateway + HTTPRoute (AC: config applied)"
 if kubectl -n "$NS" get gateway casino >/dev/null 2>&1; then
