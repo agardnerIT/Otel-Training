@@ -1,16 +1,26 @@
 #!/usr/bin/env bash
-# install-opencode-skills.sh — install ready-made Dynatrace Agent Skills into the
-# attendee codespace so opencode can operate Dynatrace and reason about its data
-# (ISI-7169 B2/B3). We INSTALL published skills, we do not author them.
+# install-opencode-skills.sh — install ready-made Agent Skills into the attendee
+# codespace so opencode can operate Dynatrace and reason about OpenTelemetry data
+# (ISI-7169 B2/B3, ISI-7563 B). We INSTALL published skills, we do not author them.
 #
 # WHICH SKILLS -----------------------------------------------------------------
 # Driven by the SKILLS array below — one `owner/repo@ref` entry per skill repo.
 # Each entry's `skills/<name>/SKILL.md` directories are copied verbatim into the
-# opencode skills directory. Pins are git tags so every attendee gets the exact
-# same content (AC: "pin/record the skill version").
+# opencode skills directory. Pins are a git ref (tag or commit SHA) so every
+# attendee gets the exact same content (AC: "pin/record the skill version").
 #
-#   ISI-7177 (B3)  Dynatrace/dynatrace-for-ai  — DQL syntax, observability
+#   ISI-7177 (B3)  Dynatrace/dynatrace-for-ai        — DQL syntax, observability
 #                   patterns, Kubernetes/cloud context (38 dt-* domain skills).
+#                   Pinned to a release tag (v10.0.0).
+#   ISI-7563 (B)   henrikrexed/observability-agent-skills — OpenTelemetry skills
+#                   (otel-instrumentation / otel-ottl / otel-dynatrace, plus
+#                   otel-collector / otel-semantic-conventions as the repo adds
+#                   them). Pinned to the v1.0.0 release tag.
+#
+# This installer is the BOOTSTRAP FALLBACK: the Child-A warmup page also walks
+# attendees through installing the observability skills interactively (to teach
+# the flow), and both paths land in the SAME opencode skills dir below — so a
+# fresh codespace is lab-ready even if nobody runs the warmup by hand.
 #
 # The sibling dtctl Agent Skill (ISI-7176/B2) is installed separately by
 # install-dtctl-skill.sh, which uses dtctl's own native `dtctl skills install`
@@ -30,18 +40,20 @@
 # So we resolve the detail explicitly: fetch the pinned release tarball with the
 # same curl+tar already used by install-tools.sh and copy the skill directories
 # straight into opencode's primary skills dir. This is exactly the manual path
-# the Dynatrace repos document (`cp -r skills/<name> ~/.agents/skills/`), made
+# the upstream repos document (`cp -r skills/<name> ~/.agents/skills/`), made
 # deterministic and version-pinned. `npx skills add <owner>/<repo>@<ref>` is the
-# equivalent one-liner for anyone on a node-equipped machine.
+# equivalent one-liner for anyone on a node-equipped machine — this is the exact
+# command the Child-A warmup page should reference for the observability skills.
 #
 # GRACEFUL-SKIP / NON-FATAL CONTRACT (same shape as dispense-llm.sh) ------------
 #   - Non-fatal: a download failure (air-gapped region, GitHub blocked, rate
 #     limit) WARNs and exits 0 so it never blocks the codespace from opening.
 #     verify-opencode-skills.sh surfaces an absent skill loudly afterwards.
 #   - Idempotent: re-running re-fetches the pin and replaces each skill dir.
-#   - Offline/mirror override: set OPENCODE_SKILLS_SRC_DIR to a local checkout of
-#     a repo (containing skills/) to copy from disk instead of downloading, or
-#     <REPO>_TARBALL_URL (sanitized) to point at a reachable .tar.gz mirror.
+#   - Offline/mirror override: set a per-repo <REPO>_SRC_DIR to a local checkout
+#     of a repo (containing skills/) to copy from disk instead of downloading, or
+#     <REPO>_TARBALL_URL to point at a reachable .tar.gz mirror. OPENCODE_SKILLS_SRC_DIR
+#     is the global fallback for all repos.
 set -uo pipefail
 
 log()  { echo "==> opencode-skills: $*"; }
@@ -52,14 +64,15 @@ warn() { echo "==> opencode-skills: WARN: $*" >&2; }
 # merge surface). Record the pin here AND in the per-skill .installed-from marker.
 SKILLS=(
   "Dynatrace/dynatrace-for-ai@v10.0.0"   # ISI-7177 (B3) — DQL + observability + k8s domain skills
+  "henrikrexed/observability-agent-skills@v1.0.0"   # ISI-7563 (B) — OTel skills (otel-instrumentation/ottl/dynatrace, +collector/semconv as added)
   # (dtctl skill is handled by install-dtctl-skill.sh, not this list.)
 )
 
 # opencode's primary GLOBAL skills directory (overridable for tests/mirrors).
 OPENCODE_SKILLS_DIR="${OPENCODE_SKILLS_DIR:-$HOME/.config/opencode/skills}"
 
-# Resolve a per-repo tarball URL override env var name, e.g.
-#   Dynatrace/dynatrace-for-ai  ->  DYNATRACE_DYNATRACE_FOR_AI_TARBALL_URL
+# Resolve a per-repo override env var name, e.g.
+#   Dynatrace/dynatrace-for-ai  ->  DYNATRACE_DYNATRACE_FOR_AI  (+_TARBALL_URL / _SRC_DIR)
 override_var_name() {
   printf '%s' "$1" | tr '[:lower:]/-' '[:upper:]__' | sed 's/[^A-Z0-9_]/_/g'
 }
@@ -81,9 +94,16 @@ install_one() {
   # shellcheck disable=SC2064
   trap "rm -rf '$tmpd'" RETURN
 
-  if [[ -n "${OPENCODE_SKILLS_SRC_DIR:-}" && -d "${OPENCODE_SKILLS_SRC_DIR}/skills" ]]; then
-    log "using local source ${OPENCODE_SKILLS_SRC_DIR} (offline override)"
-    src_dir="$OPENCODE_SKILLS_SRC_DIR"
+  # Per-repo local-source override, e.g.
+  #   Dynatrace/dynatrace-for-ai  ->  DYNATRACE_DYNATRACE_FOR_AI_SRC_DIR
+  # falls back to the global OPENCODE_SKILLS_SRC_DIR. Per-repo matters now that
+  # more than one repo is installed: a single global dir would copy the wrong
+  # repo's skills for the others.
+  local sv; sv="$(override_var_name "$repo")_SRC_DIR"
+  local src_override="${!sv:-${OPENCODE_SKILLS_SRC_DIR:-}}"
+  if [[ -n "$src_override" && -d "${src_override}/skills" ]]; then
+    log "using local source ${src_override} (offline override)"
+    src_dir="$src_override"
   else
     local ov; ov="$(override_var_name "$repo")_TARBALL_URL"
     local url="${!ov:-https://github.com/${owner}/${name}/archive/${ref}.tar.gz}"
@@ -91,8 +111,8 @@ install_one() {
     if ! curl -fsSL --retry 2 -o "$tmpd/skills.tgz" "$url"; then
       warn "could not download ${repo}@${ref} from ${url}"
       warn "(air-gapped / GitHub blocked / rate-limited). This is NON-FATAL —"
-      warn "the codespace still opens; the Dynatrace opencode skills are just"
-      warn "absent. Re-run when you have network, or set ${ov} / OPENCODE_SKILLS_SRC_DIR:"
+      warn "the codespace still opens; the ${repo} opencode skills are just"
+      warn "absent. Re-run when you have network, or set ${ov} / ${sv} / OPENCODE_SKILLS_SRC_DIR:"
       warn "  bash .devcontainer/bootstrap/install-opencode-skills.sh"
       return 1
     fi
