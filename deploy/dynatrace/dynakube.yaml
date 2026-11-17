@@ -64,6 +64,15 @@ spec:
   # tenant stays readable when many attendees connect at once.
   networkZone: ${DYNAKUBE_NAME}
 
+  # Metadata enrichment — adds Kubernetes metadata (dt.kubernetes.*) to telemetry
+  # for correlation. This is the field the platform-observability reference
+  # deployment prescribes (https://docs.dynatrace.com/docs/ingest-from/setup-on-k8s/
+  # deployment/platform-observability). It is pure enrichment: it labels signals,
+  # it does NOT inject OneAgent or ingest app traces/metrics/logs, so it preserves
+  # the ISI-6793 "OTel owns app signals, no double-ingest" guarantee.
+  metadataEnrichment:
+    enabled: true
+
   # --- Kubernetes monitoring via an in-cluster ActiveGate -------------------
   # The `kubernetes-monitoring` capability is what registers this cluster for
   # Kubernetes observability. `routing` + `dynatrace-api` let in-cluster
