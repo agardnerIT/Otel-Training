@@ -67,6 +67,29 @@ source of truth** the GitOps path (ISI-6796) consumes — Argo CD syncs
   memory *requests* across the whole app, leaving headroom for the collectors
   and operators that share the cluster.
 
+## Image pulls (ISI-7585)
+
+The `vegasapp-*` packages live in the **private** `ghcr.io/henrikrexed`
+namespace, so a fresh codespace hits `403 Forbidden` → `ImagePullBackOff`. Two
+supported fixes (approved plan ISI-7577 §4 Track 1, decision **D2**):
+
+- **Preferred (D2 default) — make the packages public.** A one-time GitHub
+  account-owner toggle on the 8 `vegasapp-*` packages. After that, anonymous
+  pulls work everywhere with **no secret distribution** and nothing else to run.
+  This needs the GHCR owner (BigBoss); the fine-grained workshop `GITHUB_PAT`
+  has no `read:packages` on these packages, so it cannot flip visibility.
+- **In-repo fallback — a pull secret.** `gitops/install/ensure-casino-pull-secret.sh`
+  (wired into `bootstrap-gitops.sh` before the casino Application is created)
+  creates a `ghcr-pull` docker-registry Secret in the `casino` namespace from a
+  **package-read** token. Set `CASINO_PULL_TOKEN` to a token with
+  `read:packages` on `henrikrexed/vegasapp-*`; the default attendee `GITHUB_PAT`
+  does **not** qualify (verified: authenticated manifest pull returns 404). The
+  `vegas-casino` ServiceAccount already references `ghcr-pull`, so every pod
+  uses it. When no token is set, the script is a no-op and assumes public images.
+
+This is a **stopgap**. Track 2 (ISI-7577 c1–c4) replaces it by publishing
+public baseline images from this repo.
+
 ## Planted defects
 
 The planted defects (`labs/defects.md`) are baked into the **images**, not these

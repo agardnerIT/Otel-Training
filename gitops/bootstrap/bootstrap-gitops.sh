@@ -40,6 +40,12 @@ case "$GITOPS_PROVIDER" in
     log "1/2 installing Argo CD"
     bash "$GITOPS_DIR/install/install-argocd.sh"
 
+    # ISI-7585 — ensure private vegasapp-* images can pull before Argo syncs the
+    # casino pods. No-op when the packages are public (D2 default) or no pull
+    # token is set. Non-fatal so a public-images setup never aborts here.
+    bash "$GITOPS_DIR/install/ensure-casino-pull-secret.sh" \
+      || log "WARN: ensure-casino-pull-secret.sh failed (continuing — images may be public)"
+
     log "2/2 registering the GitLab fork + creating casino Application"
     bash "$GITOPS_DIR/install/configure-gitlab-repo.sh"
     ;;
@@ -68,6 +74,10 @@ case "$GITOPS_PROVIDER" in
 
     log "3/4 installing Argo CD"
     bash "$GITOPS_DIR/install/install-argocd.sh"
+
+    # ISI-7585 — see the gitlab branch above. No-op for public images.
+    bash "$GITOPS_DIR/install/ensure-casino-pull-secret.sh" \
+      || log "WARN: ensure-casino-pull-secret.sh failed (continuing — images may be public)"
 
     log "4/4 registering repo + creating casino Application"
     $KUBECTL apply -f "$GITOPS_DIR/argocd/casino-repo.yaml"
