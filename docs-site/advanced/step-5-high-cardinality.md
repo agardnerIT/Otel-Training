@@ -1,5 +1,7 @@
 # Step 5 — High-cardinality metrics
 
+_The `labs/advanced/` directories keep their original feature-ordinal numbering, so they run one behind these doc steps — this page's assets live under `labs/advanced/step4-high-cardinality/`._
+
 **Goal:** find a metric whose cost is exploding, understand why, and fix it at the
 collector without an app redeploy. Budget 25 minutes.
 

@@ -114,7 +114,7 @@ flowchart LR
 
     The known-good baseline is
     [`observability/collectors/gateway.yaml`](https://github.com/)
-    in the repo. The fully composed end-state — steps 3+4+5+6 wired in the
+    in the repo. The fully composed end-state — steps 4+5+6+7 wired in the
     correct order — is `labs/advanced/gateway-advanced.yaml`.
 
 ## Dynatrace validation checkpoint

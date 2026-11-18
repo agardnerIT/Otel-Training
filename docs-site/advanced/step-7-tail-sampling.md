@@ -1,5 +1,7 @@
 # Step 7 — Tail sampling
 
+_The `labs/advanced/` directories keep their original feature-ordinal numbering, so they run one behind these doc steps — this page's assets live under `labs/advanced/step6-tail-sampling/`._
+
 **Goal:** cut trace ingest cost sharply while keeping every trace that matters —
 errors, slow traces, and jackpots. Budget 25 minutes.
 

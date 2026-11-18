@@ -38,8 +38,9 @@ the config; the bridge delivers it to `otel-gateway-collector` with no manual YA
 
 ## Notes / gotchas
 
-- The bridge image tag (`operator-opamp-bridge:0.127.0`) tracks the operator release line;
-  keep it consistent with `OTEL_OPERATOR_VERSION` in `observability/versions.env`.
+- The bridge image tag (`operator-opamp-bridge:0.162.0`) tracks the operator release line;
+  keep it consistent with `OTEL_OPERATOR_VERSION` (`v0.162.0`) in `observability/versions.env`
+  — the bridge image omits the leading `v`.
 - `componentsAllowed` is an allow-list: BindPlane cannot push a component the bridge does
   not permit — a safety rail for the training cluster.
 - This **supersedes** the hand-rolled `redaction`/`transform/pii` once BindPlane owns the

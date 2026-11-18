@@ -1,5 +1,7 @@
 # Step 3 — Weaver pipeline
 
+_The `labs/advanced/` directories keep their original feature-ordinal numbering, so they run one behind these doc steps — this page's assets live under `labs/advanced/step2-weaver-semconv/`._
+
 !!! info "Optional / stretch step"
     Weaver is a build-time governance guard, not a telemetry fix. If you are tight
     on time, skim the concept and move to [Step 4](step-4-cost-of-observability.md) —
