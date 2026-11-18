@@ -24,6 +24,16 @@ metadata:
     app.kubernetes.io/part-of: casino
     app.kubernetes.io/managed-by: argocd
 automountServiceAccountToken: true
+# ISI-7585 — casino images live in the private ghcr.io/henrikrexed/vegasapp-*
+# namespace. The clean fix (D2 default) is making those packages PUBLIC, after
+# which anonymous pulls work and this reference is a harmless no-op. As a fully
+# in-repo fallback, gitops/install/ensure-casino-pull-secret.sh creates the
+# `ghcr-pull` docker-registry Secret from a package-read token when one is
+# provided. Referencing a Secret that does not exist is NOT fatal — the kubelet
+# logs an event and still attempts the pull (node creds / anonymous), so this
+# line is safe whether the images are public or the pull secret is present.
+imagePullSecrets:
+  - name: ghcr-pull
 ---
 apiVersion: v1
 kind: ConfigMap
