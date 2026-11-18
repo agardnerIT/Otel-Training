@@ -162,7 +162,7 @@ fetch spans, from: now() - 30m
 ```dql
 fetch spans, from: now() - 30m
 | filter isNotNull(casino.bet.tier)
-| summarize bets = count(), avg_payout = avg(casino.payout.amount), by: { casino.bet.tier }
+| summarize bets = count(), avg_payout = avg(toDouble(casino.payout.amount)), by: { casino.bet.tier }
 ```
 
 - **Before:** `casino.bet.tier` does not exist; `countDistinct(casino.bet.amount)`
