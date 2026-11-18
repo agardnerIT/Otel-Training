@@ -264,7 +264,17 @@ else
     record casino skip "casino manifests absent"
   else
     kubectl create namespace casino --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-    if kubectl -n casino apply -f "$REPO_ROOT/deploy/casino/k8s"; then
+    # Resolve the ${IMAGE_OWNER}/${IMAGE_TAG} image placeholders (ISI-7587) before
+    # applying, so the direct path installs valid image refs just like the GitOps
+    # seed does. Baseline defaults come from render-images.sh; set IMAGE_OWNER to
+    # repoint at a fork build.
+    RENDER="$REPO_ROOT/deploy/casino/render-images.sh"
+    APPLY_DIR="$REPO_ROOT/deploy/casino/k8s"
+    if [[ -f "$RENDER" ]]; then
+      APPLY_DIR="$(mktemp -d)"
+      SRC_DIR="$REPO_ROOT/deploy/casino/k8s" bash "$RENDER" -o "$APPLY_DIR" || APPLY_DIR="$REPO_ROOT/deploy/casino/k8s"
+    fi
+    if kubectl -n casino apply -f "$APPLY_DIR"; then
       ok "casino applied directly to namespace 'casino' (no GitOps)"
       record casino ok "direct kubectl apply"
     else
