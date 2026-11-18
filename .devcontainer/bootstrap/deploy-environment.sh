@@ -270,11 +270,18 @@ else
     # repoint at a fork build.
     RENDER="$REPO_ROOT/deploy/casino/render-images.sh"
     APPLY_DIR="$REPO_ROOT/deploy/casino/k8s"
+    RENDER_OK=1
     if [[ -f "$RENDER" ]]; then
       APPLY_DIR="$(mktemp -d)"
-      SRC_DIR="$REPO_ROOT/deploy/casino/k8s" bash "$RENDER" -o "$APPLY_DIR" || APPLY_DIR="$REPO_ROOT/deploy/casino/k8s"
+      # Fail CLOSED: if the render fails, do NOT fall back to the raw sources —
+      # those still carry ${IMAGE_OWNER}/${IMAGE_TAG} and applying them is
+      # InvalidImageName (ISI-7617 review). Skip the apply and record a failure.
+      SRC_DIR="$REPO_ROOT/deploy/casino/k8s" bash "$RENDER" -o "$APPLY_DIR" || RENDER_OK=0
     fi
-    if kubectl -n casino apply -f "$APPLY_DIR"; then
+    if [[ "$RENDER_OK" -ne 1 ]]; then
+      warn "render-images.sh failed — refusing to apply unrendered placeholder manifests (InvalidImageName)"
+      record casino fail "render-images.sh non-zero"
+    elif kubectl -n casino apply -f "$APPLY_DIR"; then
       ok "casino applied directly to namespace 'casino' (no GitOps)"
       record casino ok "direct kubectl apply"
     else
