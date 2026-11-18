@@ -39,7 +39,7 @@ spec:
               drop: ["ALL"]
             readOnlyRootFilesystem: false
             allowPrivilegeEscalation: false
-          image: "ghcr.io/henrikrexed/vegasapp-dice:0.39"
+          image: "ghcr.io/${IMAGE_OWNER}/otel-training/vegasapp-dice:${IMAGE_TAG}"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

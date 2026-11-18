@@ -40,7 +40,7 @@ spec:
               drop: ["ALL"]
             readOnlyRootFilesystem: false
             allowPrivilegeEscalation: false
-          image: "ghcr.io/henrikrexed/vegasapp-blackjack:0.39"
+          image: "ghcr.io/${IMAGE_OWNER}/otel-training/vegasapp-blackjack:${IMAGE_TAG}"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

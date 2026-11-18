@@ -24,14 +24,18 @@ metadata:
     app.kubernetes.io/part-of: casino
     app.kubernetes.io/managed-by: argocd
 automountServiceAccountToken: true
-# ISI-7585 — casino images live in the private ghcr.io/henrikrexed/vegasapp-*
-# namespace. The clean fix (D2 default) is making those packages PUBLIC, after
-# which anonymous pulls work and this reference is a harmless no-op. As a fully
-# in-repo fallback, gitops/install/ensure-casino-pull-secret.sh creates the
-# `ghcr-pull` docker-registry Secret from a package-read token when one is
-# provided. Referencing a Secret that does not exist is NOT fatal — the kubelet
-# logs an event and still attempts the pull (node creds / anonymous), so this
-# line is safe whether the images are public or the pull secret is present.
+# Casino images are built + published by CI (.github/workflows/casino-images.yml,
+# ISI-7587) to ghcr.io/<owner>/otel-training/vegasapp-<svc>. The deployment image:
+# lines carry ${IMAGE_OWNER}/${IMAGE_TAG} placeholders that the seed/deploy step
+# substitutes (plain-text, ISI-7589 c3); the upstream BASELINE images are public
+# so a fresh fork pulls them anonymously with no token at first launch.
+#
+# imagePullSecrets below stays for the FORK case: an attendee's own build lands
+# in their GHCR namespace, which may be private — c3 wires a `ghcr-pull`
+# docker-registry Secret (from GITHUB_PAT) so those pulls work. Referencing a
+# Secret that does not exist is NOT fatal — the kubelet logs an event and still
+# attempts the pull (node creds / anonymous), so this line is safe whether the
+# images are public baseline (no secret needed) or a private fork build.
 imagePullSecrets:
   - name: ghcr-pull
 ---
