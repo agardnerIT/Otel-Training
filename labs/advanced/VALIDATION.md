@@ -111,3 +111,50 @@ fetch spans, from: now() - 1h
 - **After:** total volume drops sharply, but the **absolute** error/slow/jackpot trace
   count is unchanged (100% retention). Confirm a known error trace is still complete
   end-to-end.
+
+---
+
+## Catalog B4 — OTTL enrichment (`casino.bet.tier`)
+
+```dql
+fetch spans, from: now() - 30m
+| filter isNotNull(casino.bet.tier)
+| summarize spans = count(), by: { casino.bet.tier }
+| sort spans desc
+```
+
+- **Before:** `casino.bet.tier` does not exist; `countDistinct(casino.bet.amount)` is
+  large and climbing (high cardinality).
+- **After:** exactly the four buckets `low`/`mid`/`high`/`whale`; `countDistinct(casino.bet.tier) <= 4`
+  while the raw amount stays high — a sliceable dimension from a continuous number.
+
+---
+
+## Catalog B5 — Structure unstructured logs (OTTL)
+
+```dql
+fetch logs, from: now() - 30m
+| filter isNotNull(casino.outcome)
+| summarize lines = count(), by: { casino.game.name, casino.outcome }
+| sort lines desc
+```
+
+- **Before:** the spin line is one opaque `content` string; `casino.outcome` is null
+  and `loglevel` is unknown/`NONE`.
+- **After:** typed `casino.*` attributes are queryable and `loglevel` is populated;
+  the pass-through guard (`k8s.namespace.name == "casino" and isNull(casino.outcome)`)
+  stays non-zero — unrecognised lines were kept, not dropped.
+
+---
+
+## Catalog B6 — Metric temporality (`cumulativetodelta`)
+
+```dql
+timeseries bets = sum(casino.bets.count), from: now() - 1h, interval: 1m
+```
+
+- **Before (cumulative):** the raw counter is an ever-climbing staircase; a pod
+  restart drops it to 0 (false rate dip).
+- **After (delta):** each 1-minute bucket is the bets **in that minute** — a clean
+  rate for charts, alerts, and SLO burn, with no restart cliff. Same holds for
+  `sum(casino.payout.total)`.
