@@ -38,6 +38,7 @@ ADVANCED_PAGES = [
     "advanced/step-5-high-cardinality",
     "advanced/step-6-pii-logs",
     "advanced/step-7-tail-sampling",
+    "advanced/bindplane-opamp",
 ]
 
 errors: list[str] = []
