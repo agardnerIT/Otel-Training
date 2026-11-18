@@ -1,5 +1,7 @@
 # Step 6 — PII in logs
 
+_The `labs/advanced/` directories keep their original feature-ordinal numbering, so they run one behind these doc steps — this page's assets live under `labs/advanced/step5-pii-redaction/`._
+
 **Goal:** stop shipping player PII to Dynatrace. You will redact it at the
 collector first, then escalate to centrally managed redaction with BindPlane OP
 over the OTel Operator's OpAMP bridge when hand-rolled regex stops scaling.
@@ -103,9 +105,10 @@ In BindPlane, attach a **Mask Sensitive Data** processor to the casino log sourc
 and push — the bridge delivers it to `otel-gateway-collector` with no manual YAML.
 
 !!! note "Gotchas"
-    - The bridge image tag (`operator-opamp-bridge:0.127.0`) tracks the operator
+    - The bridge image tag (`operator-opamp-bridge:0.162.0`) tracks the operator
       release line — keep it consistent with `OTEL_OPERATOR_VERSION` in
-      `observability/versions.env` (currently `v0.162.0`).
+      `observability/versions.env` (currently `v0.162.0`; the bridge image omits
+      the leading `v`).
     - `componentsAllowed` is an allow-list: BindPlane cannot push a component the
       bridge does not permit — a safety rail for the training cluster.
     - This **supersedes** the hand-rolled `redaction`/`transform/pii` once

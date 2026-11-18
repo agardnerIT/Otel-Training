@@ -1,5 +1,7 @@
 # Step 4 — Cost of observability
 
+_The `labs/advanced/` directories keep their original feature-ordinal numbering, so they run one behind these doc steps — this page's assets live under `labs/advanced/step3-cost-center/`._
+
 **Goal:** attribute your telemetry spend. You cannot manage what you cannot
 attribute, so you will inject the Dynatrace cost-center attributes at the gateway
 and read ingest split per cost center. Budget 20 minutes.
