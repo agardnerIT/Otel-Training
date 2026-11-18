@@ -24,7 +24,25 @@ fetch spans
 
 ---
 
-## Step 2 — Weaver semconv guard
+## Step 2 — agent-driven business metrics
+
+```dql
+timeseries bets = sum(casino.bets.count), by: { casino.game.name, casino.outcome }, from: now() - 1h
+```
+
+```dql
+timeseries wager_p90 = percentile(casino.wager.amount, 90), by: { casino.game.name }, from: now() - 1h
+```
+
+- **Before:** both metrics absent — `casino.bets.count` / `casino.wager.amount` do not
+  exist; the queries return nothing.
+- **After:** `casino.bets.count` returns one series per `casino.game.name` ×
+  `casino.outcome` (≤ 12 bounded series); `casino.wager.amount` returns a p90 wager per
+  game. Pin the counter as a line tile split by `casino.outcome`.
+
+---
+
+## Step 3 — Weaver semconv guard
 
 Build-time checkpoint (CI): `weaver registry check` exits 0 (green) on intact conventions,
 non-zero (red) on drift. Downstream Dynatrace proof: the Step 1 DQL keeps returning rows
@@ -38,7 +56,7 @@ weaver registry check \
 
 ---
 
-## Step 3 — cost-center injection
+## Step 4 — cost-center injection
 
 ```dql
 fetch logs, from: now() - 1h
@@ -52,7 +70,7 @@ fetch logs, from: now() - 1h
 
 ---
 
-## Step 4 — high-cardinality metrics
+## Step 5 — high-cardinality metrics
 
 ```dql
 timeseries cnt = count(), by: { casino.game.name, casino.outcome }, from: now() - 1h
@@ -66,7 +84,7 @@ timeseries cnt = count(), by: { casino.game.name, casino.outcome }, from: now() 
 
 ---
 
-## Step 5 — PII redaction
+## Step 6 — PII redaction
 
 ```dql
 fetch logs, from: now() - 1h
@@ -82,7 +100,7 @@ fetch logs, from: now() - 1h
 
 ---
 
-## Step 6 — tail sampling
+## Step 7 — tail sampling
 
 ```dql
 fetch spans, from: now() - 1h

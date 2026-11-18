@@ -1,4 +1,4 @@
-# Step 5 — PII in logs
+# Step 6 — PII in logs
 
 **Goal:** stop shipping player PII to Dynatrace. You will redact it at the
 collector first, then escalate to centrally managed redaction with BindPlane OP
@@ -29,14 +29,35 @@ charged player john.doe@example.com card 4111 1111 1111 1111 ssn 123-45-6789
 
 lands in the Dynatrace Log Viewer **with the PII intact**.
 
-## The fix — redact at the collector
+## ② Opencode — redact at the collector
 
-Apply the `redaction` + `transform/pii` processors
-(`labs/advanced/step5-pii-redaction/redaction-processor.yaml`), wired into the logs
-pipeline in the composed gateway:
+Drive `opencode` at the gateway with the `otel-collector` + `otel-ottl` skills —
+masking log PII is a transform, so name OTTL explicitly:
 
 ```bash
-kubectl apply -f labs/advanced/gateway-advanced.yaml
+opencode run "Using the otel-collector and otel-ottl skills: in \
+observability/collectors/gateway.yaml add redaction for player PII in LOG bodies — \
+mask email, credit-card PAN, and SSN patterns (a transform/pii processor with \
+OTTL replace_pattern on log.body, plus the redaction processor). Wire it into the \
+logs pipeline only, after k8sattributes and before batch. Keep memory_limiter \
+first and batch last."
+```
+
+## ③ Review — read the diff
+
+Confirm the masking is on the **logs** pipeline, covers email/PAN/SSN, and sits
+between `k8sattributes` and `batch`. Reference answer:
+`labs/advanced/step5-pii-redaction/redaction-processor.yaml`.
+
+!!! warning "If the agent gets it wrong — steer it back"
+    If it leaves one PII shape unmasked or masks trace attributes instead of log
+    bodies, reply *"mask all three — email, PAN, SSN — on log.body in the logs
+    pipeline only."* Always re-run the leak-scan DQL to confirm `leaks == 0`.
+
+## ④ Apply — kubectl
+
+```bash
+kubectl apply -f observability/collectors/gateway.yaml
 ```
 
 The same line now arrives as:
@@ -45,7 +66,12 @@ The same line now arrives as:
 charged player ***EMAIL_REDACTED*** card ***PAN_REDACTED*** ssn ***SSN_REDACTED***
 ```
 
-## Escalate — BindPlane OP via the OpAMP bridge
+## Escalate — BindPlane OP via the OpAMP bridge (optional / stretch)
+
+!!! info "Optional / stretch"
+    The collector redaction above already satisfies the Definition of done. This
+    BindPlane escalation is a stretch exercise for cohorts with time — skip it to
+    go straight to [Step 7](step-7-tail-sampling.md).
 
 When regex-by-hand no longer scales (new PII shapes, per-service rules, audit
 trail), hand config to **BindPlane OP** over OpAMP. The OTel Operator's OpAMP
@@ -111,4 +137,4 @@ fetch logs, from: now() - 1h
 - [ ] BindPlane OP + OpAMP bridge deployed; a Mask Sensitive Data config pushed
 - [ ] The OpAMPBridge reports healthy + effective-config
 
-Next: [Step 6 — Tail sampling](step-6-tail-sampling.md).
+Next: [Step 7 — Tail sampling](step-7-tail-sampling.md).

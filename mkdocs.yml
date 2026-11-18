@@ -68,16 +68,19 @@ nav:
   - M5 — Operating at scale: module-5.md
   - Troubleshooting: troubleshooting.md
   # Option A (ISI-6913): new advanced self-paced track ALONGSIDE M0–M5.
-  # Pages are stubs pending §2 content authoring (ISI-6930).
+  # Opencode-first rewrite (ISI-7564): Problem → Opencode → Verify loop,
+  # Step 0 warmup + Step 2 business metrics, steps renumbered.
   - Advanced self-paced track:
       - Getting started: advanced/getting-started.md
       - The environment: advanced/environment.md
+      - Step 0 — Warmup: advanced/step-0-warmup.md
       - Step 1 — Instrument with AI agents: advanced/step-1-instrument-with-agents.md
-      - Step 2 — Weaver pipeline: advanced/step-2-weaver-pipeline.md
-      - Step 3 — Cost of observability: advanced/step-3-cost-of-observability.md
-      - Step 4 — High-cardinality metrics: advanced/step-4-high-cardinality.md
-      - Step 5 — PII in logs: advanced/step-5-pii-logs.md
-      - Step 6 — Tail sampling: advanced/step-6-tail-sampling.md
+      - Step 2 — Business metrics: advanced/step-2-business-metrics.md
+      - Step 3 — Weaver pipeline: advanced/step-3-weaver-pipeline.md
+      - Step 4 — Cost of observability: advanced/step-4-cost-of-observability.md
+      - Step 5 — High-cardinality metrics: advanced/step-5-high-cardinality.md
+      - Step 6 — PII in logs: advanced/step-6-pii-logs.md
+      - Step 7 — Tail sampling: advanced/step-7-tail-sampling.md
 
 plugins:
   - search
