@@ -20,8 +20,7 @@ flowchart LR
   spans["Spin spans<br/>casino.bet.amount = 5, 50, 2500 …"] --> ml["memory_limiter"]
   ml --> k8s["k8sattributes"]
   k8s --> t["transform/bet_tier<br/>OTTL: amount -> tier"]
-  t -->|"casino.bet.tier = low·mid·high·whale"| b["batch"]
-  b --> dt["Dynatrace"]
+  t -->|"casino.bet.tier = low·mid·high·whale"| dt["Dynatrace<br/>(exporter batching)"]
 ```
 
 The `transform` processor runs an **OTTL** statement per span: read the numeric
@@ -41,7 +40,7 @@ climbing, and `casino.bet.tier` does not exist yet.
 
 Add a `transform` processor to `observability/collectors/gateway.yaml`
 (reference: `labs/advanced/catalog-b4-ottl-enrichment/ottl-bet-tier-processor.yaml`)
-and wire it onto the **traces** pipeline **between `k8sattributes` and `batch`**:
+and wire it onto the **traces** pipeline **right after `k8sattributes`** (last in the chain):
 
 ```yaml
 processors:
@@ -58,14 +57,14 @@ processors:
 service:
   pipelines:
     traces:
-      processors: [memory_limiter, k8sattributes, transform/bet_tier, batch]
+      processors: [memory_limiter, k8sattributes, transform/bet_tier]
 ```
 
 !!! danger "Invariants still hold"
     `memory_limiter` stays **first** (it must sit ahead of anything that fans out
-    work) and `batch` stays **last** (nothing enriches spans after they are
-    batched for export). The transform slots **between** them — right after
-    enrichment. Only the traces pipeline changes; metrics and logs are untouched.
+    work) and there is **no `batch` processor** (batching now happens in the exporter
+    via `sending_queue.batch`, after every processor), so the transform goes
+    **last — right after `k8sattributes`**. Only the traces pipeline changes; metrics and logs are untouched.
 
 !!! note "Why `Double()` and `!= nil`"
     `Double(...)` coerces the amount whether the SDK emitted an int or a double,
@@ -84,10 +83,10 @@ before you let it continue.
     Using the otel-collector skill, read observability/collectors/gateway.yaml —
     do not edit. List the traces pipeline processors in order, and confirm where a
     transform processor that derives an attribute from another attribute must go
-    so the memory_limiter-first / batch-last invariants still hold.
+    so the memory_limiter-first / no-batch-processor invariants still hold.
     ```
     **What you should see:** the agent names the traces pipeline order and places
-    the transform between `k8sattributes` and `batch`.
+    the transform right after `k8sattributes`.
     **Review check:** it does not propose enriching in the app or after batch.
 
 === "P2 · Core — bucket the amount"
@@ -95,12 +94,12 @@ before you let it continue.
     ```text
     Using the otel-ottl skill, add a transform/bet_tier processor on the traces
     pipeline that sets casino.bet.tier from casino.bet.amount: low <10, mid 10–99,
-    high 100–999, whale >=1000. Use error_mode: ignore. Wire it between
-    k8sattributes and batch. Do not touch metrics or logs.
+    high 100–999, whale >=1000. Use error_mode: ignore. Wire it last, right after
+    k8sattributes (this gateway has no batch processor). Do not touch metrics or logs.
     ```
     **What you should see:** a `transform/bet_tier` block with four `set(... )
     where` statements, added to the traces pipeline in the right position.
-    **Review check:** `memory_limiter` first, `batch` last, transform in between.
+    **Review check:** `memory_limiter` first, no `batch` processor, transform placed after `k8sattributes`.
 
 === "P3 · Deepen — make it robust"
 
@@ -176,9 +175,9 @@ fetch spans, from: now() - 30m
       amount — set it to low/mid/high/whale from a range comparison."*
     - **Overlapping ranges double-set the tier:** *"make the four ranges mutually
       exclusive (e.g. 10–99, 100–999) so a value can match only one."*
-    - **Breaks the invariant** (transform after batch, or memory_limiter not
-      first): *"memory_limiter first, batch last; the transform goes between
-      k8sattributes and batch."*
+    - **Breaks the invariant** (batch processor re-added, or memory_limiter not
+      first): *"memory_limiter first, no batch processor (it is deprecated); the transform
+      goes right after k8sattributes."*
     - **Omits `error_mode: ignore`** (a span with no amount errors the batch):
       *"set error_mode: ignore and guard with casino.bet.amount != nil so bare
       spans are skipped, not failed."*
@@ -186,8 +185,8 @@ fetch spans, from: now() - 30m
 ## Definition of done
 
 - [ ] `transform/bet_tier` derives `casino.bet.tier` from `casino.bet.amount`
-- [ ] Wired on the **traces** pipeline between `k8sattributes` and `batch`
-- [ ] Invariants hold (memory_limiter first, batch last); metrics/logs untouched
+- [ ] Wired on the **traces** pipeline right after `k8sattributes`
+- [ ] Invariants hold (memory_limiter first, no batch processor); metrics/logs untouched
 - [ ] Tier DQL returns only `low`/`mid`/`high`/`whale`
 - [ ] Cardinality guard: `tiers` stays `<= 4` while `amounts` is large
 

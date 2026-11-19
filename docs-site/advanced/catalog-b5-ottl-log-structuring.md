@@ -20,8 +20,7 @@ flowchart LR
   raw["Unstructured line<br/>level=INFO msg=... game=slots bet=50 ..."] --> ml["memory_limiter"]
   ml --> k8s["k8sattributes"]
   k8s --> t["transform/structure_logs<br/>OTTL: ExtractPatterns + merge_maps"]
-  t -->|"casino.game.name, casino.outcome,<br/>casino.bet.amount, severity"| b["batch"]
-  b --> dt["Dynatrace"]
+  t -->|"casino.game.name, casino.outcome,<br/>casino.bet.amount, severity"| dt["Dynatrace<br/>(exporter batching)"]
 ```
 
 `ExtractPatterns` runs a regex with named groups over the log `body`,
@@ -45,7 +44,7 @@ fields and no severity. Confirm it: run the [checkpoint DQL](#verify) now —
 
 Add a `transform` processor to `observability/collectors/gateway.yaml`
 (reference: `labs/advanced/catalog-b5-ottl-log-structuring/ottl-structure-logs-processor.yaml`)
-and wire it onto the **logs** pipeline **between `k8sattributes` and `batch`**:
+and wire it onto the **logs** pipeline **right after `k8sattributes`** (last in the chain):
 
 ```yaml
 processors:
@@ -77,12 +76,12 @@ processors:
 service:
   pipelines:
     logs:
-      processors: [memory_limiter, k8sattributes, transform/structure_logs, batch]
+      processors: [memory_limiter, k8sattributes, transform/structure_logs]
 ```
 
 !!! danger "Invariants still hold"
-    `memory_limiter` stays **first** and `batch` stays **last**. The transform
-    slots **between** them on the **logs** pipeline only — traces and metrics are
+    `memory_limiter` stays **first** and there is **no `batch` processor** (batching is on the exporter), so the
+    transform goes **last — right after `k8sattributes`** — on the **logs** pipeline only — traces and metrics are
     untouched.
 
 !!! note "Named groups can't contain dots"
@@ -108,10 +107,10 @@ before you let it continue.
     Using the otel-collector skill, read observability/collectors/gateway.yaml —
     do not edit. List the logs pipeline processors in order and tell me where a
     transform processor that parses the log body must go so the
-    memory_limiter-first / batch-last invariants still hold.
+    memory_limiter-first / no-batch-processor invariants still hold.
     ```
     **What you should see:** the agent names the logs pipeline order and places the
-    transform between `k8sattributes` and `batch`.
+    transform right after `k8sattributes`.
     **Review check:** it targets the logs pipeline, not traces or metrics.
 
 === "P2 · Core — extract the fields"
@@ -122,11 +121,11 @@ before you let it continue.
     'level=INFO msg="spin settled" game=slots bet=50 outcome=win payout=150',
     use ExtractPatterns + merge_maps to capture level, msg, game, bet, outcome,
     payout into attributes. Use error_mode: ignore and only match lines containing
-    game=. Wire it between k8sattributes and batch.
+    game=. Wire it right after k8sattributes.
     ```
     **What you should see:** an `ExtractPatterns(body, …)` with named groups folded
     in via `merge_maps`, added in the right pipeline position.
-    **Review check:** `memory_limiter` first, `batch` last, transform in between.
+    **Review check:** `memory_limiter` first, no `batch` processor, transform placed after `k8sattributes`.
 
 === "P3 · Deepen — type + classify + rename"
 
@@ -210,16 +209,16 @@ fetch logs, from: now() - 30m
     - **Keeps the ugly temp keys** (`game`, `bet` leak to Dynatrace): *"set the
       dotted casino.* keys from the temps, then delete_key the temporary extraction
       keys."*
-    - **Breaks the invariant** (transform after batch, or memory_limiter not
-      first): *"memory_limiter first, batch last; the transform goes between
-      k8sattributes and batch on the logs pipeline."*
+    - **Breaks the invariant** (batch processor re-added, or memory_limiter not
+      first): *"memory_limiter first, no batch processor (it is deprecated); the transform
+      goes right after k8sattributes on the logs pipeline."*
 
 ## Definition of done
 
 - [ ] `transform/structure_logs` parses the body into `casino.*` attributes
 - [ ] Numeric fields are typed with `Int(...)`; level lifted into severity
-- [ ] Wired on the **logs** pipeline between `k8sattributes` and `batch`
-- [ ] Invariants hold (memory_limiter first, batch last); traces/metrics untouched
+- [ ] Wired on the **logs** pipeline right after `k8sattributes`
+- [ ] Invariants hold (memory_limiter first, no batch processor); traces/metrics untouched
 - [ ] Field DQL groups by `casino.outcome`; `loglevel` is populated
 - [ ] Pass-through guard non-zero — unrecognised lines were not dropped
 

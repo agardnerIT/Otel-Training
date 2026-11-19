@@ -19,8 +19,7 @@ flowchart LR
   cum["Cumulative counter<br/>1, 3, 6, 10, 15 … (resets on restart)"] --> ml["memory_limiter"]
   ml --> k8s["k8sattributes"]
   k8s --> c2d["cumulative_to_delta<br/>include: casino.bets.count, casino.payout.total"]
-  c2d -->|"delta: 1, 2, 3, 4, 5 …"| b["batch"]
-  b --> dt["Dynatrace<br/>sum() over a window = events in window"]
+  c2d -->|"delta: 1, 2, 3, 4, 5 …"| dt["Dynatrace<br/>(exporter batching)"]
 ```
 
 **Temporality** is what a counter point *means*:
@@ -64,11 +63,11 @@ processors:
 service:
   pipelines:
     metrics:
-      processors: [memory_limiter, k8sattributes, cumulative_to_delta, batch]
+      processors: [memory_limiter, k8sattributes, cumulative_to_delta]
 ```
 
 !!! danger "Invariants still hold"
-    `memory_limiter` stays **first** and `batch` stays **last**. The position of
+    `memory_limiter` stays **first** and there is **no `batch` processor** (batching is on the exporter). The position of
     `cumulative_to_delta` is unchanged — only its body goes from `{}` to the targeted
     config. The processor supports the **metrics** signal only; it must not be
     added to the traces or logs pipeline (that fails validation).
@@ -94,8 +93,8 @@ before you let it continue.
     the metrics pipeline, and explain what an empty `cumulative_to_delta: {}`
     converts.
     ```
-    **What you should see:** the agent reports the empty `{}` between
-    `k8sattributes` and `batch` and explains it converts all cumulative sums.
+    **What you should see:** the agent reports the empty `{}` right after
+    `k8sattributes` and explains it converts all cumulative sums.
     **Review check:** it confirms the processor is metrics-only.
 
 === "P2 · Core — target the casino counters"
@@ -107,7 +106,7 @@ before you let it continue.
     ```
     **What you should see:** an `include.metrics` list with the two counters and
     `match_type: strict`; position unchanged.
-    **Review check:** `memory_limiter` first, `batch` last; metrics pipeline only.
+    **Review check:** `memory_limiter` first, no `batch` processor; metrics pipeline only.
 
 === "P3 · Deepen — bound the state"
 
@@ -171,9 +170,9 @@ timeseries payout = sum(casino.payout.total), from: now() - 1h, interval: 1m
       non-monotonic sums is wrong."*
     - **Adds it to traces or logs:** *"cumulative_to_delta is metrics-only; it must
       not appear on the traces or logs pipeline."*
-    - **Breaks the invariant** (moves it after batch, or memory_limiter not first):
-      *"memory_limiter first, batch last; cumulative_to_delta stays between
-      k8sattributes and batch."*
+    - **Breaks the invariant** (batch processor re-added, or memory_limiter not first):
+      *"memory_limiter first, no batch processor (it is deprecated); cumulative_to_delta
+      goes right after k8sattributes."*
     - **Drops `max_staleness`** (stale series holds forever): *"add max_staleness:
       10m so a series that stops reporting is forgotten, not replayed as a huge
       delta."*
@@ -182,8 +181,8 @@ timeseries payout = sum(casino.payout.total), from: now() - 1h, interval: 1m
 
 - [ ] `cumulative_to_delta` is explicit — `include.metrics` names the two counters
 - [ ] `max_staleness` + `initial_value` set; `match_type: strict`
-- [ ] On the **metrics** pipeline only, between `k8sattributes` and `batch`
-- [ ] Invariants hold (memory_limiter first, batch last); traces/logs untouched
+- [ ] On the **metrics** pipeline only, right after `k8sattributes`
+- [ ] Invariants hold (memory_limiter first, no batch processor); traces/logs untouched
 - [ ] Per-minute `sum()` DQL reads as a clean rate (not a cumulative staircase)
 
 Back to the [catalog menu](catalog.md).

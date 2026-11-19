@@ -9,9 +9,10 @@
 # bounded set you can safely slice on.
 #
 # Placement keeps the pipeline invariants intact —
-#   memory_limiter -> k8sattributes -> transform/bet_tier -> batch
+#   memory_limiter -> k8sattributes -> transform/bet_tier -> otlp_http/dynatrace (exporter batching)
 # memory_limiter stays FIRST (it must sit ahead of anything that fans out work)
-# and batch stays LAST (nothing enriches spans after they are batched for export).
+# and there is NO batch processor — batching happens on the exporter
+# (sending_queue.batch), so the transform runs LAST, right after k8sattributes.
 # Only the TRACES pipeline changes; metrics and logs are untouched.
 
 processors:
@@ -32,11 +33,11 @@ processors:
           - set(attributes["casino.bet.tier"], "high")  where attributes["casino.bet.amount"] != nil and Double(attributes["casino.bet.amount"]) >= 100 and Double(attributes["casino.bet.amount"]) < 1000
           - set(attributes["casino.bet.tier"], "whale") where attributes["casino.bet.amount"] != nil and Double(attributes["casino.bet.amount"]) >= 1000
 
-# Wire the transform onto the traces pipeline between k8sattributes and batch.
+# Wire the transform onto the traces pipeline, last — right after k8sattributes.
 # (Only the traces pipeline changes; metrics/logs are untouched.)
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, k8sattributes, transform/bet_tier, batch]
+      processors: [memory_limiter, k8sattributes, transform/bet_tier]
       exporters: [otlp_http/dynatrace]
