@@ -70,8 +70,16 @@ data:
       check(http.get(`${BASE}/api/games`), { 'games listed': (r) => r.status === 200 });
 
       // 2. Log in + seed a balance.
-      const creds = JSON.stringify({ Username: username, ProfileType: 'loadgen', Balance: 1000 });
-      check(http.post(`${BASE}/api/user/login`, creds, JSON_HDR), { 'login ok': (r) => r.status < 500 });
+      // Login validates email + a profileType in ['partner','customer','dynatracer','other'],
+      // so send a well-formed payload (otherwise it 400s and user.login shows a
+      // 100% error rate in the lab).
+      const creds = JSON.stringify({
+        Username: username,
+        Email: `${username}@loadgen.test`,
+        ProfileType: 'other',
+        Balance: 1000,
+      });
+      check(http.post(`${BASE}/api/user/login`, creds, JSON_HDR), { 'login 2xx': (r) => r.status >= 200 && r.status < 300 });
       http.post(`${BASE}/api/user/init`, JSON.stringify({ Username: username, Balance: 1000 }), JSON_HDR);
       http.get(`${BASE}/api/user/balance?username=${username}`);
 

@@ -149,8 +149,11 @@ Once Argo CD owns the `casino` namespace, do **not** `kubectl apply` by hand —
 
 ## Verify
 
-Offline (anytime): `kubeconform -strict deploy/casino/k8s/*.yaml` — all 22
-resources validate.
+Offline (anytime):
+`kubeconform -strict -ignore-missing-schemas deploy/casino/k8s/*.yaml` — the 22
+deployed app resources validate. (`-ignore-missing-schemas` skips the Gateway
+API CRs in `70/71/72-*.yaml`, which have no bundled schema and are not part of
+the deployed topology — see the gateway exclusion note above.)
 
 Live (on the cluster, after deploy):
 
