@@ -68,52 +68,21 @@ The same line now arrives as:
 charged player ***EMAIL_REDACTED*** card ***PAN_REDACTED*** ssn ***SSN_REDACTED***
 ```
 
-## Escalate — BindPlane OP via the OpAMP bridge (optional / stretch)
+## Escalate — when hand-rolled regex stops scaling
 
-!!! info "Optional / stretch"
-    The collector redaction above already satisfies the Definition of done. This
-    BindPlane escalation is a stretch exercise for cohorts with time — skip it to
-    go straight to [Step 7](step-7-tail-sampling.md).
+The collector redaction above already satisfies the Definition of done. But
+regex-by-hand does not scale: new PII shapes, per-service rules, and an audit
+trail each mean more YAML edited per collector. The fleet answer is to author the
+config **once** in **BindPlane OP** and push it to the collectors over OpAMP —
+via the OTel Operator's **OpAMP bridge**, optionally through an **OpAMP gateway
+(relay)** for segmented clusters.
 
-When regex-by-hand no longer scales (new PII shapes, per-service rules, audit
-trail), hand config to **BindPlane OP** over OpAMP. The OTel Operator's OpAMP
-bridge connects the operator-managed collectors to BindPlane, so redaction config
-is authored and pushed centrally instead of edited in YAML per collector.
+That full deploy-and-connect walkthrough — BindPlane install, the relay, the
+bridge CRD, and the central *Mask Sensitive Data* push — lives in its own
+appendix so this ladder stays focused on the collector-side fix:
 
-```mermaid
-flowchart LR
-  BP["BindPlane OP<br/>Mask Sensitive Data"] -- "OpAMP (ws)" --> BR["OpAMPBridge<br/>casino-opamp-bridge"]
-  BR -- "remote config" --> GW["otel-gateway-collector<br/>(operator-managed)"]
-  GW -- "OTLP (clean)" --> DT[("Dynatrace")]
-```
-
-```bash
-# 1. BindPlane OP server in-cluster (pin the chart version for the training).
-helm repo add bindplane https://observiq.github.io/bindplane-op-helm
-helm upgrade --install bindplane bindplane/bindplane -n observability --create-namespace
-
-# 2. Connection token for the bridge (BindPlane → Settings → OpAMP / install command).
-kubectl -n observability create secret generic bindplane-opamp \
-  --from-literal=BINDPLANE_OPAMP_TOKEN='<token-from-bindplane>'
-kubectl -n observability set env opampbridge/casino-opamp-bridge --from=secret/bindplane-opamp
-
-# 3. The OpAMP bridge.
-kubectl apply -f labs/advanced/step5-pii-redaction/bindplane-opamp/opampbridge.yaml
-```
-
-In BindPlane, attach a **Mask Sensitive Data** processor to the casino log source
-and push — the bridge delivers it to `otel-gateway-collector` with no manual YAML.
-
-!!! note "Gotchas"
-    - The bridge image tag (`operator-opamp-bridge:0.162.0`) tracks the operator
-      release line — keep it consistent with `OTEL_OPERATOR_VERSION` in
-      `observability/versions.env` (currently `v0.162.0`; the bridge image omits
-      the leading `v`).
-    - `componentsAllowed` is an allow-list: BindPlane cannot push a component the
-      bridge does not permit — a safety rail for the training cluster.
-    - This **supersedes** the hand-rolled `redaction`/`transform/pii` once
-      BindPlane owns the config; keep the Step 5 processors as the "before
-      BindPlane" baseline.
+➡️ **[Central config: the OpAMP bridge + a BindPlane gateway](bindplane-opamp.md)**
+(optional / stretch).
 
 ## Dynatrace validation checkpoint
 
@@ -129,15 +98,15 @@ fetch logs, from: now() - 1h
 
 - **Before:** `leaks > 0` — raw email/PAN/SSN visible in the Log Viewer.
 - **After (redaction):** `leaks == 0`; sampled lines show `***…_REDACTED***`.
-- **After (BindPlane):** same clean result, now driven by the pushed BindPlane
-  config; the OpAMPBridge reports **healthy + effective-config** in Dynatrace.
+
+The optional [BindPlane appendix](bindplane-opamp.md) reaches the same clean
+result driven by centrally pushed config instead of hand-edited YAML.
 
 ## Definition of done
 
 - [ ] Raw email/PAN/SSN confirmed in the Log Viewer before the fix
 - [ ] `redaction` + `transform/pii` wired into the logs pipeline
 - [ ] The leak-scan DQL returns `leaks == 0`
-- [ ] BindPlane OP + OpAMP bridge deployed; a Mask Sensitive Data config pushed
-- [ ] The OpAMPBridge reports healthy + effective-config
+- [ ] _(Stretch)_ Central config pushed via the [BindPlane appendix](bindplane-opamp.md)
 
 Next: [Step 7 — Tail sampling](step-7-tail-sampling.md).
