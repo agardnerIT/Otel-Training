@@ -5,7 +5,8 @@
 #    with `otelcol validate` (downloads the pinned otelcol-contrib if needed).
 # 2. Asserts the pipeline-order contract:
 #      memory_limiter FIRST, k8sattributes before cumulativetodelta,
-#      cumulativetodelta only on metrics, batch LAST.
+#      cumulativetodelta only on metrics, NO `batch` processor (deprecated),
+#      and exporter-level batching (sending_queue.batch) enabled on every exporter.
 # 3. Renders the pinned operator + cert-manager manifests with kubectl --dry-run
 #    server-side if a cluster is reachable (skipped offline).
 #
@@ -77,26 +78,38 @@ check_order() { # file, name, pipeline, expected-csv
 }
 
 GW="${HERE}/collectors/gateway.yaml"
-check_order "$GW" gateway traces  "memory_limiter, k8sattributes, batch"
-check_order "$GW" gateway metrics "memory_limiter, k8sattributes, cumulativetodelta, batch"
-check_order "$GW" gateway logs    "memory_limiter, k8sattributes, batch"
+check_order "$GW" gateway traces  "memory_limiter, k8sattributes"
+check_order "$GW" gateway metrics "memory_limiter, k8sattributes, cumulativetodelta"
+check_order "$GW" gateway logs    "memory_limiter, k8sattributes"
 DS="${HERE}/collectors/daemonset.yaml"
-check_order "$DS" daemonset logs  "memory_limiter, batch"
+check_order "$DS" daemonset logs  "memory_limiter"
 
-# memory_limiter first / batch last everywhere, k8sattributes before
+# memory_limiter first / no batch processor anywhere, k8sattributes before
 # cumulativetodelta, cumulativetodelta never outside metrics.
 for file in "$GW" "$DS"; do
   name="$("$YQ" '.metadata.name' "$file")"
   while IFS= read -r line; do
     [[ "$line" == "" ]] && continue
     pipe="${line%%:*}"; procs="${line#*: }"
-    first="${procs%%,*}"; last="${procs##*, }"
+    first="${procs%%,*}"
     [[ "$first" == "memory_limiter" ]] || err "${name}/${pipe}: memory_limiter is not first"
-    [[ "$last" == "batch" ]] || err "${name}/${pipe}: batch is not last"
+    [[ ",${procs//, /,}," != *",batch,"* ]] || err "${name}/${pipe}: deprecated batch processor present (use exporter sending_queue.batch)"
     if [[ ",${procs}," == *",cumulativetodelta,"* && "$pipe" != "metrics" ]]; then
       err "${name}/${pipe}: cumulativetodelta outside the metrics pipeline"
     fi
   done < <("$YQ" '.spec.config.service.pipelines | to_entries | map(.key + ": " + (.value.processors | join(", "))) | .[]' "$file")
+done
+
+# --- 2b. exporter-level batching ---------------------------------------------
+# Every exporter must enable sending_queue.batch (replacement for the batch processor).
+for file in "$GW" "$DS"; do
+  name="$("$YQ" '.metadata.name' "$file")"
+  while IFS= read -r exp; do
+    [[ "$exp" == "" ]] && continue
+    en="$("$YQ" ".spec.config.exporters.\"${exp}\".sending_queue.batch.enabled" "$file")"
+    [[ "$en" == "true" ]] && log "exporter batching OK: ${name}/${exp}" \
+      || err "${name}/${exp}: sending_queue.batch.enabled is not true"
+  done < <("$YQ" '.spec.config.exporters | keys | .[]' "$file")
 done
 
 # --- 3. k8s manifest sanity (cluster optional) --------------------------------

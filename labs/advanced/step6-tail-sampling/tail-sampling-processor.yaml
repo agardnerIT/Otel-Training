@@ -10,7 +10,7 @@
 # scale the gateway, you MUST front it with a loadbalancing exporter tier keyed on traceID,
 # or decisions will be made on partial traces.
 #
-# Wire into the TRACES pipeline only, after k8sattributes/resource, before batch. Composed
+# Wire into the TRACES pipeline only, after k8sattributes/resource, before the exporter. Composed
 # result: labs/advanced/gateway-advanced.yaml.
 
 processors:
@@ -42,4 +42,4 @@ processors:
           sampling_percentage: 10
 
 # Pipeline wiring (traces pipeline only):
-#   traces: [memory_limiter, k8sattributes, resource/costcenter, tail_sampling, batch]
+#   traces: [memory_limiter, k8sattributes, resource/costcenter, tail_sampling]

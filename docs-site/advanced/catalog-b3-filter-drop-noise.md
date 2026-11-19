@@ -20,9 +20,8 @@ flowchart LR
   spans["Span stream<br/>(all services)"] --> ml["memory_limiter"]
   ml --> k8s["k8sattributes"]
   k8s --> f["filter/drop_noise<br/>health · /metrics · probes"]
-  f -->|"/spin, /score …"| b["batch"]
+  f -->|"/spin, /score …"| dt["Dynatrace<br/>(exporter batching)"]
   f -. "dropped" .-x drop(("✗"))
-  b --> dt["Dynatrace"]
 ```
 
 The `filter` processor evaluates an **OTTL** condition per span: match a
@@ -41,7 +40,7 @@ ingest.
 
 Add a `filter` processor to `observability/collectors/gateway.yaml`
 (reference: `labs/advanced/catalog-b3-filter-drop-noise/filter-drop-noise-processor.yaml`)
-and wire it onto the **traces** pipeline **between `k8sattributes` and `batch`**:
+and wire it onto the **traces** pipeline **after `k8sattributes`**:
 
 ```yaml
 processors:
@@ -59,14 +58,14 @@ processors:
 service:
   pipelines:
     traces:
-      processors: [memory_limiter, k8sattributes, filter/drop_noise, batch]
+      processors: [memory_limiter, k8sattributes, filter/drop_noise]
 ```
 
 !!! danger "Invariants still hold"
     `memory_limiter` stays **first** (it must sit ahead of anything that fans out
-    work) and `batch` stays **last** (nothing drops spans after they are batched
-    for export). The filter slots **between** them — right after enrichment, so a
-    dropped span never reaches batch. Only the traces pipeline changes; metrics and
+    work) and there is **no `batch` processor** (batching happens in the exporter, after every
+    processor has run). The filter goes right after enrichment, so a
+    dropped span never reaches the exporter. Only the traces pipeline changes; metrics and
     logs are untouched.
 
 !!! note "Prefer `http.route` over `url.path`"
@@ -87,23 +86,23 @@ before you let it continue.
     Using the otel-collector skill, read observability/collectors/gateway.yaml —
     do not edit. List the traces pipeline processors in order, and tell me where a
     filter processor that drops health-check and /metrics spans must go so the
-    memory_limiter-first / batch-last invariants still hold.
+    memory_limiter-first / no-batch-processor invariants still hold.
     ```
     **What you should see:** the agent names the traces pipeline order and places
-    the filter between `k8sattributes` and `batch`.
-    **Review check:** it does not propose dropping spans at the app or after batch.
+    the filter after `k8sattributes`.
+    **Review check:** it does not propose dropping spans at the app or downstream of the gateway.
 
 === "P2 · Core — add the filter"
 
     ```text
     Add a filter/drop_noise processor that DROPS spans whose http.route is
     /health, /healthz, /readyz or /metrics. Use error_mode: ignore. Wire it onto
-    the traces pipeline between k8sattributes and batch. Do not touch metrics or
+    the traces pipeline after k8sattributes. Do not touch metrics or
     logs.
     ```
     **What you should see:** a `filter/drop_noise` block with `traces.span`
     conditions, added to the traces pipeline in the right position.
-    **Review check:** `memory_limiter` first, `batch` last, filter in between.
+    **Review check:** `memory_limiter` first, no `batch` processor, filter placed after `k8sattributes`.
 
 === "P3 · Deepen — robust matching"
 
@@ -169,20 +168,20 @@ fetch spans, from: now() - 30m
     - **Drops a real endpoint** (`/spin` disappears): *"the filter must match only
       health/metrics/probe spans — anchor the regex and prefer http.route so
       operational endpoints are never dropped."*
-    - **Breaks the invariant** (filter after batch, or memory_limiter not first):
-      *"memory_limiter first, batch last; the filter goes between k8sattributes and
-      batch."*
+    - **Breaks the invariant** (batch processor re-added, or memory_limiter not first):
+      *"memory_limiter first, no batch processor (it is deprecated); the filter goes right after
+      k8sattributes."*
     - **Edits the metrics or logs pipeline:** *"only the traces pipeline changes —
       leave metrics and logs untouched."*
-    - **Omits `error_mode: ignore`** (spans missing the attr error the batch):
+    - **Omits `error_mode: ignore`** (spans missing the attr fail the condition instead of being skipped):
       *"set error_mode: ignore so a span without http.route evaluates as no-match
       instead of failing."*
 
 ## Definition of done
 
 - [ ] `filter/drop_noise` processor drops `/health`, `/healthz`, `/readyz`, `/metrics` spans
-- [ ] Wired on the **traces** pipeline between `k8sattributes` and `batch`
-- [ ] Invariants hold (memory_limiter first, batch last); metrics/logs untouched
+- [ ] Wired on the **traces** pipeline after `k8sattributes`
+- [ ] Invariants hold (memory_limiter first, no batch processor); metrics/logs untouched
 - [ ] `noise` DQL collapses to ~0 after apply
 - [ ] `operations` DQL (`/spin`, `/score`) is unchanged — no signal loss
 

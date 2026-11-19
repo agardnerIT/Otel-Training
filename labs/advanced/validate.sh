@@ -4,7 +4,8 @@
 # 1. `otelcol validate` on the composed gateway-advanced.yaml (downloads the pinned
 #    otelcol-contrib if needed, same as observability/validate.sh).
 # 2. Asserts the pipeline-order contract on the composed gateway:
-#      memory_limiter FIRST, batch LAST, cumulativetodelta only on metrics,
+#      memory_limiter FIRST, NO `batch` processor (deprecated; batching is
+#      sending_queue.batch on the exporter), cumulativetodelta only on metrics,
 #      tail_sampling only on traces.
 # 3. If `weaver` is on PATH, runs the Step-2 semconv registry check + policies.
 #
@@ -57,9 +58,9 @@ rm -f "$tmp" "$tmp.err"
 while IFS= read -r line; do
   [[ "$line" == "" ]] && continue
   pipe="${line%%:*}"; procs="${line#*: }"
-  first="${procs%%,*}"; last="${procs##*, }"
+  first="${procs%%,*}"
   [[ "$first" == "memory_limiter" ]] || err "gateway-advanced/${pipe}: memory_limiter is not first"
-  [[ "$last" == "batch" ]] || err "gateway-advanced/${pipe}: batch is not last"
+  [[ ",${procs//, /,}," != *",batch,"* ]] || err "gateway-advanced/${pipe}: deprecated batch processor present (use exporter sending_queue.batch)"
   if [[ ",${procs}," == *",cumulativetodelta,"* && "$pipe" != "metrics" ]]; then
     err "gateway-advanced/${pipe}: cumulativetodelta outside the metrics pipeline"
   fi
@@ -68,6 +69,14 @@ while IFS= read -r line; do
   fi
   log "pipeline order OK: gateway-advanced/${pipe} = [${procs}]"
 done < <("$YQ" '.spec.config.service.pipelines | to_entries | map(.key + ": " + (.value.processors | join(", "))) | .[]' "$GW")
+
+# --- 2b. exporter-level batching ---------------------------------------------
+while IFS= read -r exp; do
+  [[ "$exp" == "" ]] && continue
+  en="$("$YQ" ".spec.config.exporters.\"${exp}\".sending_queue.batch.enabled" "$GW")"
+  [[ "$en" == "true" ]] && log "exporter batching OK: gateway-advanced/${exp}" \
+    || err "gateway-advanced/${exp}: sending_queue.batch.enabled is not true"
+done < <("$YQ" '.spec.config.exporters | keys | .[]' "$GW")
 
 # --- 3. Weaver semconv check (optional) --------------------------------------
 if command -v weaver >/dev/null 2>&1; then

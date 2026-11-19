@@ -5,7 +5,7 @@ These are the **solution assets** for the advanced training track. Each step shi
 the guide author (ISI-6930 §2) can cite verbatim. The collector assets layer on top of
 the canonical, correct gateway collector at
 [`observability/collectors/gateway.yaml`](../../observability/collectors/gateway.yaml)
-(the "known-good baseline" — memory_limiter first, batch last, k8sattributes for the
+(the "known-good baseline" — memory_limiter first, no batch processor, k8sattributes for the
 Kubernetes cluster).
 
 Step numbers below are the **attendee-facing** sequence (ISI-7564 opencode-first
@@ -30,13 +30,13 @@ incrementally; facilitators can apply it directly.
 ## How the steps compose (collector pipeline order)
 
 All critical-rule invariants hold in every asset: **`memory_limiter` is always the first
-processor; `batch` is always the last; `k8sattributes` is used because we run in
+processor; there is **no `batch` processor** (deprecated — batching is `sending_queue.batch` on the exporter); `k8sattributes` is used because we run in
 Kubernetes** (never `resourcedetection` here).
 
 ```
-                         ┌─ traces  : memory_limiter → k8sattributes → resource/costcenter → tail_sampling → batch
-otlp (gRPC/HTTP) ─┤─ metrics : memory_limiter → k8sattributes → resource/costcenter → transform/cardinality → cumulativetodelta → batch
-                         └─ logs    : memory_limiter → k8sattributes → resource/costcenter → transform/pii + redaction → batch
+                         ┌─ traces  : memory_limiter → k8sattributes → resource/costcenter → tail_sampling → (exporter batching)
+otlp (gRPC/HTTP) ─┤─ metrics : memory_limiter → k8sattributes → resource/costcenter → transform/cardinality → cumulativetodelta → (exporter batching)
+                         └─ logs    : memory_limiter → k8sattributes → resource/costcenter → transform/pii + redaction → (exporter batching)
                                                                                                                          └→ otlphttp/dynatrace
 ```
 

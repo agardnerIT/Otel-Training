@@ -25,7 +25,7 @@ metrics pipeline** — the connector is the bridge between the two.
 ## `spanmetrics-connector.yaml`
 
 The delta to merge into the gateway collector. Note the invariants are preserved
-on **both** pipelines: `memory_limiter` first, `batch` last. Dimensions are kept
+on **both** pipelines: `memory_limiter` first, no `batch` processor (batching is on the exporter). Dimensions are kept
 bounded (`casino.game.name`, `casino.outcome`) — the same cardinality discipline
 as Step 2 and Step 5; never add `player.id` / `round.id` here.
 

@@ -35,7 +35,7 @@ opencode run "Using the otel-ottl and otel-collector skills: in \
 observability/collectors/gateway.yaml add a transform/cardinality processor that \
 deletes the metric datapoint attributes round.id and player.id (OTTL: \
 delete_key(attributes, \"round.id\")). Wire it into the metrics pipeline only, \
-after k8sattributes and before batch. Leave memory_limiter first and batch last."
+after k8sattributes and before the exporter. Leave memory_limiter first and no batch processor."
 ```
 
 ## ③ Review — read the diff

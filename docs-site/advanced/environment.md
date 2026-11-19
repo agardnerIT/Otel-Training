@@ -81,8 +81,8 @@ Each step gives you a **copy-pasteable prompt** with three things the agent need
     `opencode` is not deterministic. If the diff misses an attribute, puts a
     processor in the wrong pipeline order, or invents a field name, **reply with
     the specific correction** rather than editing by hand — e.g. *"memory_limiter
-    must stay the first processor and batch the last; move your new processor
-    between k8sattributes and batch."* Steering the agent is the skill this track
+    must stay the first processor and there must be no batch processor; move your new processor
+    after k8sattributes."* Steering the agent is the skill this track
     teaches; the verify checkpoint tells you when you are done.
 
 **Apply differs by target.** App-code fixes (Steps 1–2) go through Git —
@@ -102,13 +102,12 @@ flowchart LR
   otlp["OTLP in<br/>(gRPC/HTTP)"] --> ml["memory_limiter<br/>(always first)"]
   ml --> k8s["k8sattributes<br/>(Kubernetes enrichment)"]
   k8s --> mid["step 4–7 processors<br/>cost / cardinality / PII / sampling"]
-  mid --> batch["batch<br/>(always last)"]
-  batch --> dtx["otlphttp → Dynatrace"]
+  mid --> dtx["otlphttp → Dynatrace<br/>(sending_queue.batch)"]
 ```
 
 !!! note "The three invariants"
     - `memory_limiter` is **always the first** processor.
-    - `batch` is **always the last** processor.
+    - There is **no `batch` processor** (deprecated) — batching is `sending_queue.batch` on the exporter.
     - `k8sattributes` does the Kubernetes enrichment (we run in Kubernetes — we
       never use `resourcedetection` here).
 

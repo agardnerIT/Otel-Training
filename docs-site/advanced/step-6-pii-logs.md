@@ -41,14 +41,14 @@ opencode run "Using the otel-collector and otel-ottl skills: in \
 observability/collectors/gateway.yaml add redaction for player PII in LOG bodies — \
 mask email, credit-card PAN, and SSN patterns (a transform/pii processor with \
 OTTL replace_pattern on log.body, plus the redaction processor). Wire it into the \
-logs pipeline only, after k8sattributes and before batch. Keep memory_limiter \
-first and batch last."
+logs pipeline only, after k8sattributes and before the exporter. Keep memory_limiter \
+first and do not add a batch processor."
 ```
 
 ## ③ Review — read the diff
 
 Confirm the masking is on the **logs** pipeline, covers email/PAN/SSN, and sits
-between `k8sattributes` and `batch`. Reference answer:
+after `k8sattributes`. Reference answer:
 `labs/advanced/step5-pii-redaction/redaction-processor.yaml`.
 
 !!! warning "If the agent gets it wrong — steer it back"

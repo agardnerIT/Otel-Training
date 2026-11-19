@@ -106,13 +106,13 @@ and confirms the agent can read repo files:
 ```bash
 opencode run "Read observability/collectors/gateway.yaml and explain, in order, \
 every processor in the traces pipeline. For each, say what it does and why its \
-position matters. Confirm memory_limiter is first and batch is last, and tell me \
+position matters. Confirm memory_limiter is first and that there is no batch processor (batching is on the exporter), and tell me \
 where a NEW processor would have to go to respect those two invariants."
 ```
 
 A correct answer walks the processors top-to-bottom, states that `memory_limiter`
-is first and `batch` is last, and says a new processor belongs **between
-`k8sattributes` and `batch`**. That is the invariant you will enforce by hand
+is first, that there is no `batch` processor (batching is configured on the exporter), and says a new processor belongs **after
+`k8sattributes`**. That is the invariant you will enforce by hand
 every time you steer the agent on Steps 4–7 — now you have seen the agent state
 it itself.
 
@@ -129,6 +129,6 @@ it itself.
 - [ ] `opencode debug skill` lists `dt-*`, `otel-*`, and `dtctl`
 - [ ] The agent produced a **read-only** dtctl command (and you steered it if it didn't)
 - [ ] The agent correctly explained the gateway pipeline order and the
-      memory_limiter-first / batch-last invariants
+      memory_limiter-first / no-batch-processor invariants
 
 Next: [Step 1 — Instrument with AI agents](step-1-instrument-with-agents.md).

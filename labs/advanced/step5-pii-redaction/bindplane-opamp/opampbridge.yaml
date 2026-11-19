@@ -38,6 +38,5 @@ spec:
       - redaction
       - transform
       - memory_limiter
-      - batch
     exporters:
       - otlphttp

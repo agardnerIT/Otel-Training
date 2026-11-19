@@ -6,7 +6,7 @@
 # the collector's metrics aggregation on export.
 #
 # Merge this `transform/cardinality` processor into the metrics pipeline only, AFTER
-# k8sattributes/resource and BEFORE cumulativetodelta + batch. Composed result:
+# k8sattributes/resource and BEFORE cumulativetodelta. Composed result:
 # labs/advanced/gateway-advanced.yaml.
 
 processors:
@@ -23,7 +23,7 @@ processors:
           - delete_key(attributes, "player.id")
 
 # Pipeline wiring (metrics pipeline only):
-#   metrics: [memory_limiter, k8sattributes, resource/costcenter, transform/cardinality, cumulativetodelta, batch]
+#   metrics: [memory_limiter, k8sattributes, resource/costcenter, transform/cardinality, cumulativetodelta]
 #
 # Alternative (equivalent) with the metricstransform processor — aggregate instead of delete:
 #   metricstransform:
