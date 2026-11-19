@@ -19,9 +19,13 @@
 #   IMAGE_OWNER=alice IMAGE_TAG=latest render-images.sh -o /tmp/rendered
 #
 # Env:
-#   IMAGE_OWNER  GHCR namespace owner        (default: henrikrexed — upstream baseline)
-#   IMAGE_TAG    image tag                   (default: ./IMAGE_VERSION, else latest)
-#   SRC_DIR      source manifests directory  (default: <this dir>/k8s)
+#   IMAGE_OWNER   GHCR namespace owner       (default: henrikrexed — upstream baseline)
+#   IMAGE_TAG     image tag                  (default: ./IMAGE_VERSION, else latest)
+#   CLUSTER_NAME  per-attendee cluster name  (default: otel-training) — rendered into
+#                 K8S_CLUSTER_NAME + each OTEL_RESOURCE_ATTRIBUTES so every attendee's
+#                 telemetry carries a unique k8s.cluster.name for per-participant DQL
+#                 filtering on a shared tenant (ISI-7654 / D1).
+#   SRC_DIR       source manifests directory (default: <this dir>/k8s)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,6 +43,9 @@ DEFAULT_TAG="${DEFAULT_TAG:-latest}"
 
 IMAGE_OWNER="${IMAGE_OWNER:-henrikrexed}"
 IMAGE_TAG="${IMAGE_TAG:-$DEFAULT_TAG}"
+# Per-attendee cluster name (ISI-7654 / D1). Defaults to the shared historical
+# name so a render without a cluster name is a no-op change vs the old hardcode.
+CLUSTER_NAME="${CLUSTER_NAME:-otel-training}"
 SRC_DIR="${SRC_DIR:-$SCRIPT_DIR/k8s}"
 
 OUT_DIR=""
@@ -59,15 +66,19 @@ fi
 # defensively so a substituted reference is always a valid image name.
 IMAGE_OWNER="$(printf '%s' "$IMAGE_OWNER" | tr '[:upper:]' '[:lower:]')"
 
-# Only the two placeholders are substituted — nothing else in the YAML is touched.
-render() { sed -e "s|\${IMAGE_OWNER}|${IMAGE_OWNER}|g" -e "s|\${IMAGE_TAG}|${IMAGE_TAG}|g" "$1"; }
+# Only these placeholders are substituted — nothing else in the YAML is touched.
+render() {
+  sed -e "s|\${IMAGE_OWNER}|${IMAGE_OWNER}|g" \
+      -e "s|\${IMAGE_TAG}|${IMAGE_TAG}|g" \
+      -e "s|\${CLUSTER_NAME}|${CLUSTER_NAME}|g" "$1"
+}
 
 if [[ -n "$OUT_DIR" ]]; then
   mkdir -p "$OUT_DIR"
   for f in "$SRC_DIR"/*.yaml; do
     render "$f" > "$OUT_DIR/$(basename "$f")"
   done
-  echo "render-images.sh: wrote $(ls "$SRC_DIR"/*.yaml | wc -l | tr -d ' ') manifest(s) to $OUT_DIR (owner=$IMAGE_OWNER tag=$IMAGE_TAG)" >&2
+  echo "render-images.sh: wrote $(ls "$SRC_DIR"/*.yaml | wc -l | tr -d ' ') manifest(s) to $OUT_DIR (owner=$IMAGE_OWNER tag=$IMAGE_TAG cluster=$CLUSTER_NAME)" >&2
 else
   for f in "$SRC_DIR"/*.yaml; do
     render "$f"

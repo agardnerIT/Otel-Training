@@ -64,7 +64,7 @@ spec:
                   name: vegas-casino-config
                   key: OTEL_SERVICE_VERSION
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.name=vegas-dashboard-service,service.version=2.1.0,service.namespace=vegas-casino,deployment.environment=production,application.name=Vegas-Casino-Dashboard"
+              value: "service.name=vegas-dashboard-service,service.version=2.1.0,service.namespace=vegas-casino,deployment.environment=production,application.name=Vegas-Casino-Dashboard,k8s.cluster.name=${CLUSTER_NAME}"
             - name: DEPLOYMENT_ENVIRONMENT
               valueFrom:
                 configMapKeyRef:

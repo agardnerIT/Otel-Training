@@ -230,6 +230,31 @@ if [[ -d "$EXPECTED_SRC" ]]; then
   else
     pass "seeded manifests carry concrete image refs (no \${IMAGE_OWNER}/\${IMAGE_TAG} placeholders)"
   fi
+  # Per-attendee cluster name must be RESOLVED + consistent so an attendee can
+  # filter their own data on a shared tenant with `k8s.cluster.name` ==
+  # PARTICIPANT_ID (ISI-7654 / D1). Assert: no literal ${CLUSTER_NAME} survived,
+  # the ConfigMap value matches the live cluster name, and every service's
+  # OTEL_RESOURCE_ATTRIBUTES carries that same k8s.cluster.name.
+  EXPECT_CLUSTER="${KIND_CLUSTER_NAME:-${PARTICIPANT_ID:-otel-training}}"
+  if grep -rqE '\$\{CLUSTER_NAME\}' "$WORK/k8s"/*.yaml 2>/dev/null; then
+    fail "unresolved \${CLUSTER_NAME} in seeded manifests — seed-gitea.sh did not render the cluster name (per-participant filtering broken)"
+  else
+    seeded_cm=$(grep -hoE 'K8S_CLUSTER_NAME: *"[^"]*"' "$WORK/k8s"/00-config.yaml 2>/dev/null | sed -E 's/.*"([^"]*)".*/\1/')
+    if [[ "$seeded_cm" == "$EXPECT_CLUSTER" ]]; then
+      pass "seeded ConfigMap K8S_CLUSTER_NAME = '$seeded_cm' (matches live cluster)"
+    else
+      fail "seeded ConfigMap K8S_CLUSTER_NAME='$seeded_cm' != expected cluster '$EXPECT_CLUSTER'"
+    fi
+    attr_misses=0
+    for f in "$WORK/k8s"/[2-5]*.yaml; do
+      [[ -e "$f" ]] || continue
+      grep -q "k8s.cluster.name=${EXPECT_CLUSTER}\b" "$f" 2>/dev/null \
+        || { attr_misses=$((attr_misses+1)); info "$(basename "$f") missing k8s.cluster.name=${EXPECT_CLUSTER} in OTEL_RESOURCE_ATTRIBUTES"; }
+    done
+    [[ "$attr_misses" -eq 0 ]] \
+      && pass "every casino service emits k8s.cluster.name=${EXPECT_CLUSTER} (per-participant DQL scope works)" \
+      || fail "$attr_misses service manifest(s) do not emit k8s.cluster.name=${EXPECT_CLUSTER}"
+  fi
 else
   info "canonical manifests dir $EXPECTED_SRC absent on this branch — skipping file match"
 fi
