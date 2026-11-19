@@ -6,13 +6,38 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# PARTICIPANT_ID is the attendee-unique knob; KIND_CLUSTER_NAME still overrides
-# it (back-compat). Default stays otel-training when neither is set.
-CLUSTER_NAME="${KIND_CLUSTER_NAME:-${PARTICIPANT_ID:-otel-training}}"
+# Records the cluster name this repo actually created, so a later run with the
+# knobs unset re-attaches to it instead of spawning a second default-named
+# cluster (ISI-7629 / #65 — deterministic naming).
+STATE_FILE="${OTEL_TRAINING_CLUSTER_STATE:-$HOME/.otel-training-cluster}"
+
+# Deterministic cluster name resolution (ISI-7629 / #65):
+#   1. KIND_CLUSTER_NAME wins when explicitly set (advanced override).
+#   2. else PARTICIPANT_ID (the attendee-unique knob).
+#   3. else the name we recorded on a PREVIOUS create — so an unset-knob rerun
+#      re-attaches to the same cluster instead of creating a second one named
+#      `otel-training` beside it.
+#   4. else the `otel-training` default.
+if [[ -n "${KIND_CLUSTER_NAME:-}" ]]; then
+  CLUSTER_NAME="$KIND_CLUSTER_NAME"
+elif [[ -n "${PARTICIPANT_ID:-}" ]]; then
+  CLUSTER_NAME="$PARTICIPANT_ID"
+elif [[ -f "$STATE_FILE" ]] && [[ -s "$STATE_FILE" ]]; then
+  CLUSTER_NAME="$(tr -d '[:space:]' < "$STATE_FILE")"
+else
+  CLUSTER_NAME="otel-training"
+fi
+export KIND_CLUSTER_NAME="$CLUSTER_NAME"   # make the resolved name authoritative downstream
 KIND_CONFIG="${KIND_CONFIG:-$SCRIPT_DIR/kind-config.yaml}"
 KUBECONFIG_PATH="${KUBECONFIG:-$HOME/.kube/config}"
 
 log() { echo "==> $*"; }
+
+# Local host/reliability preflight (non-fatal). Surfaces inotify/cpu/memory
+# floors and any stray differently-named kind cluster before we create ours.
+if [[ -x "$SCRIPT_DIR/preflight.sh" || -f "$SCRIPT_DIR/preflight.sh" ]]; then
+  KIND_CLUSTER_NAME="$CLUSTER_NAME" bash "$SCRIPT_DIR/preflight.sh" || true
+fi
 
 wait_for_docker() {
   # docker-in-docker may still be starting when onCreate fires.
@@ -50,9 +75,16 @@ wait_ready() {
   kubectl --kubeconfig "$KUBECONFIG_PATH" get nodes -o wide
 }
 
+record_state() {
+  # Persist the resolved name so a later knob-unset rerun re-attaches here
+  # rather than spawning a second `otel-training` cluster (deterministic naming).
+  printf '%s\n' "$CLUSTER_NAME" > "$STATE_FILE" 2>/dev/null || true
+}
+
 main() {
   wait_for_docker
   ensure_cluster
+  record_state
   wait_ready
   log "cluster '$CLUSTER_NAME' healthy; KUBECONFIG=$KUBECONFIG_PATH"
 }

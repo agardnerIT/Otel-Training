@@ -10,6 +10,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 log() { echo "==> $*"; }
 
+# Single `.env` flow (ISI-7629 / #61): reload the canonical repo-root `.env` on
+# every start/resume so a FULL_DEPLOY reconverge and the cluster name stay in
+# sync with the attendee's values. No-op in Codespaces.
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/load-env.sh"
+
 log "ensuring kind cluster is healthy after start/resume"
 bash "$SCRIPT_DIR/create-cluster.sh" || {
   echo "WARN: cluster not healthy on start; re-run manually:" >&2
