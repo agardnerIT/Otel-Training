@@ -43,7 +43,9 @@ else
 fi
 
 mem_kb="$(awk '/MemTotal/ {print $2; exit}' /proc/meminfo 2>/dev/null || echo 0)"
-mem_gb=$(( mem_kb / 1024 / 1024 ))
+# Round to the nearest GB (+512 MiB before the divide): a nominal-8 GB host
+# reports ~7.7 GiB of MemTotal, which a floor divide would mis-flag as 7.
+mem_gb=$(( (mem_kb + 524288) / 1024 / 1024 ))
 if [ "$mem_gb" -ge "$MIN_MEM_GB" ] 2>/dev/null; then
   ok "Memory: ${mem_gb} GB (>= ${MIN_MEM_GB} GB)"
 else

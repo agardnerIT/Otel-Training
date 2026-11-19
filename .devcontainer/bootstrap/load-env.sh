@@ -25,11 +25,17 @@ _le_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 _le_repo_root="$(cd "$_le_script_dir/../.." && pwd)"
 _le_env_file="${OTEL_TRAINING_ENV_FILE:-$_le_repo_root/.env}"
 
+# OTEL_TRAINING_ENV_QUIET=1 silences the two status lines (set when sourced from
+# the ~/.bashrc hook so every new terminal doesn't echo).
+_le_say() { [ -n "${OTEL_TRAINING_ENV_QUIET:-}" ] || echo "$*"; }
+
 if [ -f "$_le_env_file" ]; then
-  echo "==> loading environment from $_le_env_file (ISI-7629 single .env flow)"
+  _le_say "==> loading environment from $_le_env_file (ISI-7629 single .env flow)"
   # Export only non-empty KEY=VALUE lines so a blank line in a committed .env
   # can never shadow a Codespaces secret already present in the environment.
   while IFS= read -r _le_line || [ -n "$_le_line" ]; do
+    # trim leading whitespace so "  export KEY=val" / "  # comment" parse right
+    _le_line="${_le_line#"${_le_line%%[![:space:]]*}"}"
     case "$_le_line" in
       ''|'#'*) continue ;;                       # blank or comment
     esac
@@ -47,12 +53,16 @@ if [ -f "$_le_env_file" ]; then
     export "$_le_key=$_le_val"
   done < "$_le_env_file"
 else
-  echo "==> no $_le_env_file (expected in Codespaces — vars come from secrets)"
+  _le_say "==> no $_le_env_file (expected in Codespaces — vars come from secrets)"
 fi
 
 # Install an idempotent ~/.bashrc hook so interactive shells get `.env` too,
-# without the attendee ever typing `source`. Guarded by a marker so repeated
-# bootstraps don't append duplicates.
+# without the attendee ever typing `source`. The hook re-sources THIS script
+# (quietly) rather than `set -a; . .env` directly, so interactive shells get the
+# exact same non-empty-only, quote-stripping loader — the "empty line can't
+# clobber a secret" guarantee is identical in both paths. Guarded by a marker so
+# repeated bootstraps don't append duplicates.
+_le_self="$_le_script_dir/load-env.sh"
 _le_bashrc="${HOME:-/home/vscode}/.bashrc"
 _le_marker="# >>> otel-training .env (ISI-7629) >>>"
 if [ -w "$(dirname "$_le_bashrc")" ] && ! grep -qF "$_le_marker" "$_le_bashrc" 2>/dev/null; then
@@ -60,9 +70,10 @@ if [ -w "$(dirname "$_le_bashrc")" ] && ! grep -qF "$_le_marker" "$_le_bashrc" 2
     echo ""
     echo "$_le_marker"
     echo "# Auto-load the single canonical repo-root .env into interactive shells."
-    echo "if [ -f \"$_le_env_file\" ]; then set -a; . \"$_le_env_file\"; set +a; fi"
+    echo "if [ -f \"$_le_self\" ]; then OTEL_TRAINING_ENV_QUIET=1 . \"$_le_self\"; fi"
     echo "# <<< otel-training .env (ISI-7629) <<<"
   } >> "$_le_bashrc"
 fi
 
-unset _le_script_dir _le_repo_root _le_env_file _le_line _le_key _le_val _le_bashrc _le_marker
+unset -f _le_say 2>/dev/null || true
+unset _le_script_dir _le_repo_root _le_env_file _le_line _le_key _le_val _le_bashrc _le_marker _le_self
