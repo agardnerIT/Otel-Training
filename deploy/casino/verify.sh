@@ -35,10 +35,18 @@ info "casino namespace       : $NS"
 info "observability namespace: $OBS_NS"
 info "evidence file          : $EVIDENCE"
 
-# Every Deployment + the load-gen Job we expect to exist.
+# Every Deployment + the load-gen Job we expect to exist. The expected set is
+# profile-aware (ISI-7653): the "lite" profile drops roulette + dice, so verify
+# must not assert them or it would false-FAIL a correct lite deployment. Default
+# is "full" (the complete topology). CASINO_PROFILE is exported by
+# deploy-environment.sh; it can also be set directly when running verify by hand.
+CASINO_PROFILE="${CASINO_PROFILE:-full}"
 DEPLOYMENTS="vegas-casino-redis vegas-casino-postgresql vegas-casino-scoring \
-vegas-casino-slots vegas-casino-roulette vegas-casino-dice vegas-casino-blackjack \
+vegas-casino-slots vegas-casino-blackjack \
 vegas-casino-dashboard vegas-casino-frontend"
+if [[ "$CASINO_PROFILE" != "lite" ]]; then
+  DEPLOYMENTS="$DEPLOYMENTS vegas-casino-roulette vegas-casino-dice"
+fi
 
 # --- 0. Prerequisites -------------------------------------------------------
 hdr "0. Prerequisites"
@@ -120,10 +128,17 @@ else
   fail "no gateway collector pod found in $OBS_NS"
 fi
 info "Downstream (Dynatrace) check: confirm services vegas-frontend-service,"
-info "vegas-slots-service, vegas-roulette-service, vegas-dice-service,"
-info "vegas-blackjack-service, vegas-dashboard-service, vegas-scoring-service"
-info "appear in the service inventory. Planted-defect services (labs/defects.md)"
-info "will show broken trace propagation / missing logs by design."
+if [[ "$CASINO_PROFILE" == "lite" ]]; then
+  info "vegas-slots-service, vegas-blackjack-service, vegas-dashboard-service,"
+  info "vegas-scoring-service appear in the service inventory (roulette + dice are"
+  info "intentionally absent in the 'lite' profile)."
+else
+  info "vegas-slots-service, vegas-roulette-service, vegas-dice-service,"
+  info "vegas-blackjack-service, vegas-dashboard-service, vegas-scoring-service"
+  info "appear in the service inventory."
+fi
+info "Planted-defect services (labs/defects.md) will show broken trace"
+info "propagation / missing logs by design."
 
 # --- 4. Load generator ------------------------------------------------------
 hdr "4. Load generator driving traffic"

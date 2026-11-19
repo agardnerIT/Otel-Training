@@ -148,6 +148,22 @@ else
   warn "render-images.sh not found — copying manifests verbatim (image placeholders will NOT be resolved)"
   cp -r "$CASINO_MANIFESTS_DIR"/. "$WORK/k8s/"
 fi
+
+# Casino "lite" profile (ISI-7653): drop roulette+dice and narrow the loadgen to
+# the surviving games before pushing, so Argo CD only ever sees the lite set.
+# Seed-time plain-text filter (no kustomize — same contract as render-images.sh);
+# $WORK/k8s is a throwaway temp so the committed source manifests are untouched.
+# Default is "full": the knob is a no-op unless CASINO_PROFILE=lite.
+CASINO_PROFILE="${CASINO_PROFILE:-full}"
+if [[ "$CASINO_PROFILE" == "lite" ]]; then
+  LITE_FILTER="$REPO_ROOT/deploy/casino/lite-filter.sh"
+  if [[ -f "$LITE_FILTER" ]]; then
+    log "CASINO_PROFILE=lite — dropping roulette+dice and narrowing the loadgen"
+    bash "$LITE_FILTER" "$WORK/k8s" || warn "lite-filter reported errors (continuing; seeding whatever remains)"
+  else
+    warn "CASINO_PROFILE=lite but $LITE_FILTER not found — seeding the FULL manifest set"
+  fi
+fi
 (
   cd "$WORK"
   git init -q -b main

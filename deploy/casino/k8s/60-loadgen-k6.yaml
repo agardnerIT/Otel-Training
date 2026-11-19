@@ -38,6 +38,15 @@ data:
     const BASE = __ENV.CASINO_URL || 'http://vegas-casino-frontend:3000';
     const VUS = Number(__ENV.VUS || 3);
 
+    // GAMES selects which games this loadgen drives (ISI-7653 casino lite
+    // profile). Default = the full four-game topology. The lite profile narrows
+    // it to the surviving services (e.g. "slots,blackjack") so the loadgen never
+    // calls the dropped roulette/dice routes. A game not in the set is skipped.
+    const GAMES = new Set(
+      (__ENV.GAMES || 'slots,roulette,dice,blackjack')
+        .split(',').map((g) => g.trim()).filter(Boolean),
+    );
+
     export const options = {
       scenarios: {
         casino: {
@@ -83,15 +92,16 @@ data:
       http.post(`${BASE}/api/user/init`, JSON.stringify({ Username: username, Balance: 1000 }), JSON_HDR);
       http.get(`${BASE}/api/user/balance?username=${username}`);
 
-      // 3. Play each game. The frontend routes these to the slots / roulette /
-      //    dice / blackjack services over gRPC.
+      // 3. Play each selected game. The frontend routes these to the slots /
+      //    roulette / dice / blackjack services over gRPC. GAMES (see top) gates
+      //    each call so the lite profile skips the dropped roulette/dice routes.
       const bet = JSON.stringify({ Username: username, BetAmount: 10 });
-      http.post(`${BASE}/api/games/slots/spin`, bet, JSON_HDR);
-      http.post(`${BASE}/api/games/roulette/spin`,
+      if (GAMES.has('slots')) http.post(`${BASE}/api/games/slots/spin`, bet, JSON_HDR);
+      if (GAMES.has('roulette')) http.post(`${BASE}/api/games/roulette/spin`,
         JSON.stringify({ Username: username, BetAmount: 10, BetType: 'red' }), JSON_HDR);
-      http.post(`${BASE}/api/dice/roll`,
+      if (GAMES.has('dice')) http.post(`${BASE}/api/dice/roll`,
         JSON.stringify({ Username: username, BetAmount: 10, BetType: 'pass' }), JSON_HDR);
-      http.post(`${BASE}/api/games/blackjack/deal`, bet, JSON_HDR);
+      if (GAMES.has('blackjack')) http.post(`${BASE}/api/games/blackjack/deal`, bet, JSON_HDR);
 
       // 4. Read-side traffic (dashboard + leaderboard aggregate the games).
       http.get(`${BASE}/api/leaderboard`);
@@ -160,6 +170,11 @@ spec:
               value: "3h"
             - name: RAMP_UP
               value: "30s"
+            # Games the loadgen drives. Full profile = all four; the lite profile
+            # (ISI-7653) rewrites this to "slots,blackjack" at seed/apply time via
+            # deploy/casino/lite-filter.sh so no traffic hits the dropped services.
+            - name: GAMES
+              value: "slots,roulette,dice,blackjack"
           volumeMounts:
             - name: loadgen-script
               mountPath: /scripts

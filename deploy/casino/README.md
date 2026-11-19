@@ -23,8 +23,8 @@ source of truth** the GitOps path (ISI-6796) consumes — Argo CD syncs
 | `k8s/11-postgresql.yaml`  | PostgreSQL (scoring store) — Deployment + Service |
 | `k8s/20-scoring.yaml`     | Scoring service (Java) — Deployment + Service |
 | `k8s/30-slots.yaml`       | Slots game (Node) — http 8081 / gRPC 50051 |
-| `k8s/31-roulette.yaml`    | Roulette game (Python) — http 8082 / gRPC 50052 |
-| `k8s/32-dice.yaml`        | Dice game (Go) — http 8083 / gRPC 50053 |
+| `k8s/31-roulette.yaml`    | Roulette game (Python) — http 8082 / gRPC 50052 — **dropped by the `lite` profile** |
+| `k8s/32-dice.yaml`        | Dice game (Go) — http 8083 / gRPC 50053 — **dropped by the `lite` profile** |
 | `k8s/33-blackjack.yaml`   | Blackjack game (Node) — http 8084 / gRPC 50054 |
 | `k8s/40-dashboard.yaml`   | Dashboard — http 3001 / gRPC 50055 |
 | `k8s/50-frontend.yaml`    | Frontend web UI — http 3000 (trace root) |
@@ -78,6 +78,54 @@ source of truth** the GitOps path (ISI-6796) consumes — Argo CD syncs
   memory *requests* across the whole app, leaving headroom for the collectors
   and operators that share the cluster.
 
+## Profiles — `full` (default) / `lite` (ISI-7653)
+
+`CASINO_PROFILE` selects the casino footprint. **Default is `full`** — the whole
+22-resource topology above. `CASINO_PROFILE=lite` shrinks it to the smallest
+casino that still tells the full lab story.
+
+| | `full` (default) | `lite` |
+| --- | --- | --- |
+| Services | slots, roulette, dice, blackjack + scoring/frontend/dashboard/redis/postgres | **roulette + dice removed** — everything else kept |
+| k6 loadgen `GAMES` | `slots,roulette,dice,blackjack` | `slots,blackjack` (no traffic to the dropped routes) |
+| Dynatrace ActiveGate | deployed (k8s-monitoring) | **optional — skipped** (app OTLP still exports via the OTel collector); `LITE_WITH_ACTIVEGATE=1` keeps it |
+| Gitea | used on the `gitops`/`gitea` path | optional — pair with `DEPLOY_MODE=direct` for a Gitea-free `kubectl apply` bring-up |
+
+Why **exactly** roulette + dice: the WS7 footprint audit (ISI-7633) found those
+two are the **only** services no lab uniquely depends on. The minimum viable
+topology lite preserves is `scoring + slots + blackjack + frontend + redis +
+postgres + loadgen + gateway`.
+
+**How it's applied — a seed-time plain-text filter, not a kustomize overlay.**
+`deploy/casino/lite-filter.sh` runs on a *throwaway copy* of the rendered
+manifests (never the committed source): it deletes `31-roulette.yaml` +
+`32-dice.yaml` and rewrites the loadgen `GAMES` value to `slots,blackjack`. Both
+deploy paths call it when `CASINO_PROFILE=lite`:
+
+- **GitOps / Gitea** — `gitops/install/seed-gitea.sh` filters the copy it pushes,
+  so Argo CD only ever sees the lite set. (The external-GitLab-fork path serves
+  whatever is in the attendee's fork; filter there by editing the fork.)
+- **Direct** — `deploy-environment.sh` filters the rendered temp dir before
+  `kubectl apply`.
+
+A flat directory of plain YAML is kept intact (no `kustomization.yaml`), so the
+edit → commit → Argo-sync lab mechanic (ISI-6796) is unchanged.
+
+```bash
+# Lite, Gitea-free (smallest footprint):
+CASINO_PROFILE=lite DEPLOY_MODE=direct bash .devcontainer/bootstrap/deploy-environment.sh
+# Lite via GitOps/Gitea (Argo CD syncs the lite set):
+CASINO_PROFILE=lite GITOPS_PROVIDER=gitea bash .devcontainer/bootstrap/deploy-environment.sh
+# Preview what lite produces, without deploying:
+d=$(mktemp -d); cp deploy/casino/k8s/*.yaml "$d"/; bash deploy/casino/lite-filter.sh "$d"; ls "$d"
+```
+
+**Nothing-breaks note:** the k6 load script sets `thresholds: {}` and so never
+aborts on a non-2xx — dropping a game is already an *expected* condition, not a
+run failure. In `lite` the `GAMES` toggle removes the dropped-route calls
+entirely, so the loadgen emits **zero** avoidable errors against the surviving
+`slots`/`blackjack`/frontend topology.
+
 ## Image owner substitution (ISI-7587 / c3 ISI-7589)
 
 The manifest `image:` lines are templated with `${IMAGE_OWNER}`/`${IMAGE_TAG}`.
@@ -118,9 +166,11 @@ the pull work:
 > **k6 loadgen** (`60-loadgen-k6.yaml`) runs the **stock upstream `grafana/k6`**
 > image (multi-arch, pinned) — there is no `vegasapp-k6` image to build or pull.
 > The load script lives in the `vegas-casino-loadgen-script` ConfigMap and is
-> mounted at `/scripts/casino-load.js`; it logs in players and plays all four
-> games through the frontend HTTP API (ISI-7625 D2b). To tune load, edit `VUS` /
-> `DURATION` on the Job, or the script in the ConfigMap.
+> mounted at `/scripts/casino-load.js`; it logs in players and plays the games
+> through the frontend HTTP API (ISI-7625 D2b). The `GAMES` env on the Job selects
+> which games it drives (default all four; the `lite` profile narrows it to
+> `slots,blackjack`). To tune load, edit `VUS` / `DURATION` / `GAMES` on the Job,
+> or the script in the ConfigMap.
 
 ## Planted defects
 
