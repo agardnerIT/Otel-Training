@@ -90,11 +90,21 @@ case "$GITOPS_PROVIDER" in
 esac
 
 log "waiting for the casino Application to become Synced + Healthy"
-for i in $(seq 1 60); do
+# ISI-7628/#63: lowered 300s -> 120s and fail fast on a Degraded app. Argo CD
+# marks the Application Degraded when its workloads can't start (ImagePullBackOff
+# / CrashLoopBackOff), so waiting out the full budget just delays the real error.
+# The caller (deploy-environment.sh) runs an authoritative real-pod-health gate
+# afterwards and reports the precise reason, so this loop only needs to give Argo
+# a reasonable first chance to converge — not block on a doomed sync.
+for i in $(seq 1 24); do
   health="$($KUBECTL -n argocd get application casino -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
   sync="$($KUBECTL -n argocd get application casino -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
   echo "   casino app: sync=${sync:-?} health=${health:-?}"
   if [[ "$health" == "Healthy" && "$sync" == "Synced" ]]; then break; fi
+  if [[ "$health" == "Degraded" ]]; then
+    echo "   casino Application is Degraded — not waiting out the full timeout (pod health is checked next)." >&2
+    break
+  fi
   sleep 5
 done
 

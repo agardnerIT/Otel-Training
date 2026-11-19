@@ -30,13 +30,47 @@ if ! command -v "$YQ" >/dev/null 2>&1; then YQ="$(command -v yq4 || true)"; fi
 command -v "$YQ" >/dev/null 2>&1 || { echo "yq (v4) not found. Install: https://github.com/mikefarah/yq" >&2; exit 2; }
 
 # --- fetch pinned otelcol if needed ------------------------------------------
+# Prefer an otelcol-contrib baked into the devcontainer image by install-tools.sh
+# (ISI-7628/#66). Only download when it is genuinely absent, and when we do,
+# detect the arch (do NOT hard-code amd64 — broke on Apple-Silicon/arm64) using
+# the same mapping as install-tools.sh, retry, and verify the SHA256 checksum.
 if [[ ! -x "$OTELCOL" ]]; then
-  ver="${OTEL_COLLECTOR_VERSION#v}"
-  log "downloading otelcol-contrib ${ver} -> ${OTELCOL}"
-  mkdir -p "$BIN_DIR"
-  url="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${ver}/otelcol-contrib_${ver}_linux_amd64.tar.gz"
-  curl -fsSL "$url" | tar -xz -C "$BIN_DIR" otelcol-contrib
-  chmod +x "$OTELCOL"
+  if command -v otelcol-contrib >/dev/null 2>&1; then
+    OTELCOL="$(command -v otelcol-contrib)"
+    log "using baked-in otelcol-contrib: ${OTELCOL}"
+  else
+    ver="${OTEL_COLLECTOR_VERSION#v}"
+    case "$(uname -m)" in
+      x86_64|amd64)  arch="amd64" ;;
+      aarch64|arm64) arch="arm64" ;;
+      *) echo "[validate] FAIL: unsupported arch for otelcol download: $(uname -m)" >&2; exit 2 ;;
+    esac
+    os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    log "otelcol-contrib not baked in — downloading ${ver} (${os}/${arch}) -> ${OTELCOL}"
+    mkdir -p "$BIN_DIR"
+    base="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${ver}"
+    asset="otelcol-contrib_${ver}_${os}_${arch}.tar.gz"
+    got=""
+    for n in 1 2 3; do
+      if curl -fsSL --retry 3 --retry-delay 2 -o /tmp/otelcol.$$.tgz "${base}/${asset}"; then got=1; break; fi
+      echo "[validate] download attempt ${n}/3 failed; retrying..." >&2; sleep $((n * 2))
+    done
+    [[ -n "$got" ]] || { echo "[validate] FAIL: could not download ${asset} after retries" >&2; exit 2; }
+    # Checksum (best-effort: skip only if sha256sum or the per-asset .sha256 side
+    # file is unavailable; a real mismatch is fatal). GoReleaser publishes a
+    # bare-hash <asset>.sha256 next to each asset.
+    if command -v sha256sum >/dev/null 2>&1; then
+      want="$(curl -fsSL "${base}/${asset}.sha256" 2>/dev/null | awk 'NF{print $1; exit}')"
+      if [[ -n "$want" ]]; then
+        have="$(sha256sum /tmp/otelcol.$$.tgz | awk '{print $1}')"
+        [[ "$want" == "$have" ]] || { echo "[validate] FAIL: otelcol checksum mismatch (want $want, got $have)" >&2; rm -f /tmp/otelcol.$$.tgz; exit 2; }
+        log "otelcol checksum verified"
+      fi
+    fi
+    tar -xzf /tmp/otelcol.$$.tgz -C "$BIN_DIR" otelcol-contrib
+    chmod +x "$OTELCOL"
+    rm -f /tmp/otelcol.$$.tgz
+  fi
 fi
 
 # --- 1. otelcol validate on each CR's embedded config ------------------------
@@ -115,9 +149,20 @@ done
 # --- 3. k8s manifest sanity (cluster optional) --------------------------------
 if kubectl get nodes >/dev/null 2>&1; then
   log "cluster reachable: kubectl dry-run on CRs"
-  kubectl apply --dry-run=server -f "${HERE}/collectors/namespace.yaml" >/dev/null || err "namespace dry-run failed"
-  kubectl apply --dry-run=server -f "${HERE}/collectors/gateway.yaml"   >/dev/null || err "gateway CR dry-run failed"
-  kubectl apply --dry-run=server -f "${HERE}/collectors/daemonset.yaml" >/dev/null || err "daemonset CR dry-run failed"
+  # CRD-ordering guard (ISI-7628/#64): the collector-CR dry-runs below need the
+  # OpenTelemetryCollector CRD, which the OTel Operator installs. If the operator
+  # isn't up yet the dry-run fails with an opaque 'no matches for kind
+  # "OpenTelemetryCollector"'. Check the CRD FIRST so the error names the real
+  # cause and points at the fix, instead of looking like a bad manifest.
+  if ! kubectl get crd opentelemetrycollectors.opentelemetry.io >/dev/null 2>&1; then
+    err "OpenTelemetryCollector CRD missing — the OpenTelemetry Operator is not installed yet."
+    err "  Install the observability stack first:  bash ${HERE##*/}/install.sh"
+    err "  (cert-manager + the OTel Operator create the CRDs these collector CRs need.)"
+  else
+    kubectl apply --dry-run=server -f "${HERE}/collectors/namespace.yaml" >/dev/null || err "namespace dry-run failed"
+    kubectl apply --dry-run=server -f "${HERE}/collectors/gateway.yaml"   >/dev/null || err "gateway CR dry-run failed"
+    kubectl apply --dry-run=server -f "${HERE}/collectors/daemonset.yaml" >/dev/null || err "daemonset CR dry-run failed"
+  fi
 else
   log "no cluster reachable — skipping server-side dry-run (steps 1-2 already ran)"
 fi
