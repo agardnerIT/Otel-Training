@@ -89,6 +89,7 @@ nav:
       - Step 6 — PII in logs: advanced/step-6-pii-logs.md
       - Step 7 — Tail sampling: advanced/step-7-tail-sampling.md
       - 'Appendix — Central config: OpAMP bridge + BindPlane gateway': advanced/bindplane-opamp.md
+      - 'Appendix — Local CI/CD: Gitea Actions & Packages': advanced/gitea-local-cicd.md
       - Catalog (extra exercises):
           - Overview: advanced/catalog.md
           - "A1 — Fix a broken trace [25m][med]": advanced/catalog-a1-broken-trace.md
