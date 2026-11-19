@@ -84,18 +84,32 @@ TERMINAL_REASONS_RE='^(ImagePullBackOff|ErrImagePull|InvalidImageName|CreateCont
 # scan_terminal_pods <namespace> — print "  pod/container: Reason — message" for
 # every container stuck in a terminal state; silent if there are none. Returns 0
 # always (callers test the captured output), kubectl-only (no jq dependency).
+#
+# Scope: only pods that back a *service* Deployment are scanned. Deployment pods
+# are ReplicaSet-owned, so we skip any pod whose top ownerReference.kind is Job —
+# the k6 loadgen (vegas-casino-loadgen, a Job) is an auxiliary traffic generator
+# whose own image pull/failure must not falsify casino *service* health. This
+# keeps the scan aligned with ns_all_deploys_ready, which only gates Deployments
+# (ISI-7649; loadgen image missing while service images exist is a documented
+# condition — see ISI-7625).
+#
+# Both init-container and app-container waiting states are read: a Deployment
+# stuck pulling an init-container image is just as terminal as an app container
+# and should fast-fail rather than drain the full rollout timeout (ISI-7649 N2).
 scan_terminal_pods() {
-  local ns="$1" pod cname reason msg
-  while read -r pod; do
+  local ns="$1" pod owner cname reason msg
+  while IFS='|' read -r pod owner; do
     [[ -z "$pod" ]] && continue
+    [[ "$owner" == "Job" ]] && continue   # auxiliary workload, not a service
     while IFS='|' read -r cname reason msg; do
       [[ -z "$reason" ]] && continue
       if [[ "$reason" =~ $TERMINAL_REASONS_RE ]]; then
         printf '  %s/%s: %s%s\n' "$pod" "$cname" "$reason" "${msg:+ — $msg}"
       fi
     done < <(kubectl -n "$ns" get pod "$pod" \
-               -o jsonpath='{range .status.containerStatuses[*]}{.name}{"|"}{.state.waiting.reason}{"|"}{.state.waiting.message}{"\n"}{end}' 2>/dev/null)
-  done < <(kubectl -n "$ns" get pods -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n')
+               -o jsonpath='{range .status.initContainerStatuses[*]}{.name}{"|"}{.state.waiting.reason}{"|"}{.state.waiting.message}{"\n"}{end}{range .status.containerStatuses[*]}{.name}{"|"}{.state.waiting.reason}{"|"}{.state.waiting.message}{"\n"}{end}' 2>/dev/null)
+  done < <(kubectl -n "$ns" get pods \
+             -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.ownerReferences[0].kind}{"\n"}{end}' 2>/dev/null)
 }
 
 # ns_all_deploys_ready <namespace> — 0 only when every Deployment reports
