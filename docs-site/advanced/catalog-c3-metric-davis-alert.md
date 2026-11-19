@@ -38,7 +38,7 @@ the good/total *ratio* is what the C2 error budget already tracks.
 
 | Field | Value | Means |
 |---|---|---|
-| `queryDefinition.metricSelector` | `casino.red.calls:filter(and(eq("span.name","casino.slots.spin"),eq("status.code","ERROR"))):splitBy():sum` | error count on the money-path |
+| `queryDefinition.metricSelector` | `casino.red.calls:filter(and(eq("span.name","casino.slots.spin"),eq("status.code","ERROR"))):splitBy():sum:rollup(avg)` | error count on the money-path |
 | `modelProperties.type` | `STATIC_THRESHOLD` | fixed line (vs. an auto-adaptive baseline) |
 | `alertCondition` / `threshold` | `ABOVE` / `5` | fire above 5 errors/min |
 | `samples` / `violatingSamples` | `5` / `3` | 3 bad minutes in a 5-minute window |
