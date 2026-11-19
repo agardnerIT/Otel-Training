@@ -54,9 +54,26 @@ jobs:
         run: python scripts/check_docs_mermaid.py site
 
       - name: Install Playwright Chromium
+        # `playwright install --with-deps` apt-installs OS libraries and downloads
+        # the Chromium build; on a freshly-rotated `ubuntu-latest` runner image this
+        # step intermittently fails (transient apt-mirror / browser-download errors),
+        # which skips the render gate and reds the whole PR even when the docs are
+        # fine. Split the apt deps from the browser download and retry each up to 3×
+        # so a transient hiccup no longer blocks the build. Still fails hard if the
+        # install genuinely cannot complete.
         run: |
+          set -eu
           pip install playwright
-          python -m playwright install --with-deps chromium
+          retry() {
+            n=0
+            until "$@"; do
+              n=$((n+1))
+              if [ "$n" -ge 3 ]; then echo "::error::'$*' failed after $n attempts"; return 1; fi
+              echo "attempt $n for '$*' failed; retrying in 10s"; sleep 10
+            done
+          }
+          retry python -m playwright install-deps chromium
+          retry python -m playwright install chromium
 
       - name: Render check — mermaid in both palettes
         run: python scripts/render_palettes.py site
