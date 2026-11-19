@@ -84,10 +84,12 @@ same money-path service you instrumented in
 *content* of the change; it is proving the pipeline carries **your** bytes to a
 running pod.
 
-Confirm the "before" — what image the slots pods run right now:
+Confirm the "before" — what image the slots pods run right now. The slots
+Deployment is named **`vegas-casino-slots`** (every casino service follows
+`vegas-casino-<svc>`):
 
 ```bash
-kubectl -n casino get deploy slots -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
+kubectl -n casino get deploy vegas-casino-slots -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
 # e.g. ghcr.io/henrikrexed/otel-training/vegasapp-slots:0.39   (default: public GHCR image)
 ```
 
@@ -105,14 +107,17 @@ in [Step 0](step-0-warmup.md)) at the slots service:
 git clone http://attendee:trainingpass123@localhost:30001/casino/casino.git
 cd casino
 
-opencode run "In apps/casino/slots, add a startup log line and a response header \
-'x-build: local-ci' to the /spin handler so I can prove this exact build is the \
-one serving traffic. Keep the response body shape unchanged."
+opencode run "In apps/casino/slots, add a distinctive startup log line to the \
+service entry point (index.js) — exactly: console.log('BUILD MARKER: local-ci') \
+— so I can prove from the pod logs that this exact build is the one running. Do \
+not change any request handler or the response shape."
 ```
 
-Use any edit you can observe from outside the pod (a response header, a version
-string on the frontend, a log line). The point is a change you can **see** once
-it is deployed.
+A **startup log line** is the most reliable proof here: it is emitted the moment
+your image boots, independent of any route, port, or HTTP method, so the verify
+in §9 is a single `kubectl logs | grep`. (Any other visible edit works too — a
+version string on the frontend, a new log field — as long as you can observe it
+from outside the pod once it is deployed.)
 
 ## 5. ③ Review — read the diff
 
@@ -148,7 +153,7 @@ commit (no `[skip ci]`):
 
 ```bash
 git add apps/casino deploy/casino/IMAGE_VERSION
-git commit -m "slots: prove local build (x-build header), tag 0.40"
+git commit -m "slots: prove local build (BUILD MARKER log), tag 0.40"
 git push origin main
 ```
 
@@ -199,8 +204,8 @@ buttons in the Argo UI (`http://localhost:30002`, Application `casino`) force it
 instantly. Watch the slots Deployment roll to your image:
 
 ```bash
-kubectl -n casino rollout status deploy/slots
-kubectl -n casino get deploy slots -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
+kubectl -n casino rollout status deploy/vegas-casino-slots
+kubectl -n casino get deploy vegas-casino-slots -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
 # -> gitea.local:30001/casino/vegasapp-slots:0.40
 ```
 
@@ -219,9 +224,9 @@ kubectl -n casino get deploy slots -o jsonpath='{.spec.template.spec.containers[
 Prove the running pod is *your* build, not the cached one:
 
 ```bash
-# the header you added in step ③ — served by the freshly-deployed pod
-kubectl -n casino exec deploy/slots -- sh -c 'wget -qS -O /dev/null http://localhost:8080/spin 2>&1 | grep -i x-build'
-# -> x-build: local-ci
+# the startup marker you added in step ② — printed by the freshly-deployed pod
+kubectl -n casino logs deploy/vegas-casino-slots | grep "BUILD MARKER"
+# -> BUILD MARKER: local-ci
 ```
 
 You have now run a change through a CI/CD pipeline that lives entirely inside one
@@ -247,7 +252,7 @@ throwaway Kubernetes cluster.
       tag.
 - [ ] **Argo CD** redeployed the slots Deployment from
       `gitea.local:30001/casino/vegasapp-slots:<tag>`.
-- [ ] You proved the running pod serves **your** change (the `x-build` header).
+- [ ] You proved the running pod is **your** build (the `BUILD MARKER` log line).
 - [ ] You can explain why a new build needs a new tag in a GitOps flow.
 
 Back to the [Catalog](catalog.md) · [The environment](environment.md).
