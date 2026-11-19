@@ -18,7 +18,7 @@
   "use strict";
 
   var PROCESSED = "data-mermaidZoomReady";
-  var overlay, stage, closeBtn;
+  var overlay, stage, closeBtn, lastTrigger;
   var scale = 1, tx = 0, ty = 0;        // current zoom/pan transform
   var dragging = false, startX = 0, startY = 0;
 
@@ -65,6 +65,7 @@
 
   function open(svg) {
     buildOverlay();
+    lastTrigger = svg;
     scale = 1; tx = 0; ty = 0;
     stage.innerHTML = "";
     var clone = svg.cloneNode(true);
@@ -84,6 +85,11 @@
     overlay.hidden = true;
     stage.innerHTML = "";
     document.body.classList.remove("mermaid-zoom-open");
+    // Return focus to the diagram that opened the lightbox (a11y).
+    if (lastTrigger) {
+      lastTrigger.focus();
+      lastTrigger = null;
+    }
   }
 
   function onWheel(e) {

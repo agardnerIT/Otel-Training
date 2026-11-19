@@ -53,8 +53,11 @@ body.mermaid-zoom-open {
   transform-origin: center center;
   /* Smooth the wheel-zoom steps, but not the drag (JS updates transform live). */
   transition: transform 0.05s linear;
-  /* Readable on the dark backdrop regardless of the page palette. */
-  background: #fff;
+  /* Back the diagram with the panel colour of the palette it was themed for.
+     mermaid2 themes diagrams dark in slate and light in default (mkdocs.yml),
+     so tracking --md-default-bg-color keeps light text/strokes readable in
+     slate instead of washing out on a forced white panel. */
+  background: var(--md-default-bg-color, #fff);
   border-radius: 6px;
   padding: 1rem;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
