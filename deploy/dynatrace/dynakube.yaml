@@ -13,6 +13,24 @@
 #   Kubernetes layer (cluster, nodes, workloads, events) — clean coexistence,
 #   no conflict. See deploy/dynatrace/README.md §"Coexistence with OTel".
 #
+# ISI-7565 — matched to a PROVEN-WORKING reference.
+#   ISI-7547/ISI-7553 chased the AG `Init:ImagePullBackOff` twice on hypothesis
+#   (added `use-public-registry`) and it still failed. The board supplied a
+#   known-good deployment that stands the same ActiveGate up with NO trouble:
+#   henrikrexed/dynatrace-AI-Agent-Workshop (cluster/dynatrace/dynakube.yaml).
+#   That reference pulls the AG from the DEFAULT (tenant) registry — no
+#   `use-public-registry` — and works with platform tokens (dt0s16). So the AG
+#   tenant-registry pull is fine when the operator apiToken carries the ActiveGate
+#   scopes (fleet-management:activegate.tokens:create + connection-info:read);
+#   the operator synthesises the pull-secret from it. The public-registry flag was
+#   not the fix and was the likely cause (public image resolution failing on our
+#   token/arch). This DynaKube is now aligned to the reference:
+#     * NO `use-public-registry` annotation (default tenant-registry pull),
+#     * ActiveGate capability `kubernetes-monitoring` ONLY (no routing/dynatrace-api),
+#     * per-attendee cluster NAME via the api-monitoring-cluster-name annotation
+#       (the reference's isolation mechanism) instead of `networkZone`,
+#     * `metadataEnrichment: enabled`.
+#
 # apiUrl and the token Secret are injected at install time by install.sh from the
 # per-attendee DT_* env (devcontainer secrets) — never hard-coded here. The
 # placeholders below are replaced by `envsubst`; apply via install.sh, not raw
@@ -31,69 +49,47 @@ metadata:
     # without a manual settings step. (Default-on in recent operators; set
     # explicitly so behaviour is obvious and stable across versions.)
     feature.dynatrace.com/automatic-kubernetes-api-monitoring: "true"
-    # Pull the ActiveGate image from Dynatrace's PUBLIC registry
-    # (public.ecr.aws/dynatrace/dynatrace-activegate), NOT the per-tenant registry
-    # (<env>.live.dynatrace.com). FIX for ISI-7553 (Init:ImagePullBackOff on
-    # <dk>-activegate-0):
-    #   The tenant registry authenticates only CLASSIC API tokens (dt0c01). Since
-    #   ISI-7163/ISI-7167 this training uses PLATFORM tokens (dt0s16), so the
-    #   operator-synthesised tenant pull-secret can no longer authenticate the AG
-    #   image pull -> the init container (same AG image) fails ImagePullBackOff.
-    #   The public registry needs NO pull-secret and is multi-arch (amd64+arm64),
-    #   so this also removes the Apple-Silicon arch-tag risk (see ISI-7049).
-    #   public.ecr.aws egress is already proven in the codespace: the operator
-    #   chart itself ships from oci://public.ecr.aws/dynatrace/dynatrace-operator
-    #   and runs fine -- only the AG, which defaults to the tenant registry, broke.
-    # Operator 1.10.0+ supports this (we pin 1.11.1). Platform tokens auto-enable
-    # public-registry resolution on newer operators, but we set it EXPLICITLY so
-    # the behaviour is version-stable and does not silently depend on token type.
-    feature.dynatrace.com/use-public-registry: "true"
+    # Per-attendee cluster NAME in Dynatrace Kubernetes API monitoring on the shared
+    # tenant, so many attendees stay readable at once. This replaces the old
+    # `networkZone` approach and matches the proven reference deployment. Rendered
+    # from ${DYNAKUBE_NAME} by install.sh's envsubst (same step that injects apiUrl).
+    feature.dynatrace.com/automatic-kubernetes-api-monitoring-cluster-name: "${DYNAKUBE_NAME}"
 spec:
   # Tenant API endpoint, e.g. https://abc12345.live.dynatrace.com/api
   apiUrl: ${DT_API_URL}
 
   # Name of the Secret (same namespace) holding `apiToken` and `dataIngestToken`.
   # Created by install.sh from DT_OPERATOR_TOKEN / DT_INGEST_TOKEN — both PLATFORM
-  # tokens (dt0s16) on this Gen3 tenant. The key names are unchanged: operator
-  # 1.10.0+ accepts a platform token in these keys (no DynaKube field change
-  # needed vs classic dt0c01 tokens). By convention the operator looks for a
-  # Secret named after the DynaKube when `tokens` is unset; we set it explicitly.
+  # tokens (dt0s16) on this Gen3 tenant. The operator apiToken MUST carry the
+  # ActiveGate scopes (fleet-management:activegate.tokens:create +
+  # fleet-management:activegate.connection-info:read) so the operator can mint the
+  # tenant-registry pull-secret for the AG image — see README token scopes. By
+  # convention the operator looks for a Secret named after the DynaKube when
+  # `tokens` is unset; we set it explicitly.
   tokens: ${DYNAKUBE_NAME}
 
-  # Give every monitored entity a stable, per-attendee cluster label so the shared
-  # tenant stays readable when many attendees connect at once.
-  networkZone: ${DYNAKUBE_NAME}
-
-  # Metadata enrichment — adds Kubernetes metadata (dt.kubernetes.*) to telemetry
-  # for correlation. This is the field the platform-observability reference
-  # deployment prescribes (https://docs.dynatrace.com/docs/ingest-from/setup-on-k8s/
-  # deployment/platform-observability). It is pure enrichment: it labels signals,
-  # it does NOT inject OneAgent or ingest app traces/metrics/logs, so it preserves
-  # the ISI-6793 "OTel owns app signals, no double-ingest" guarantee.
+  # Enrich pod/workload Kubernetes metadata (dt.kubernetes.*) into logs & OTLP
+  # signals for correlation. Pure enrichment — it labels signals, it does NOT
+  # inject OneAgent or ingest app traces/metrics/logs, so it preserves the
+  # ISI-6793 "OTel owns app signals, no double-ingest" guarantee. Present in the
+  # reference deployment too.
   metadataEnrichment:
     enabled: true
 
   # --- Kubernetes monitoring via an in-cluster ActiveGate -------------------
   # The `kubernetes-monitoring` capability is what registers this cluster for
-  # Kubernetes observability. `routing` + `dynatrace-api` let in-cluster
-  # components reach the tenant through the ActiveGate if needed; they are cheap
-  # and make the single AG self-sufficient on an air-gapped-ish kind network.
+  # Kubernetes observability. We run ONLY this capability (matching the reference);
+  # `routing` / `dynatrace-api` are not needed for K8s monitoring on a single-node
+  # kind cluster and are omitted to keep the AG minimal.
   activeGate:
     capabilities:
       - kubernetes-monitoring
-      - routing
-      - dynatrace-api
-    # One replica is plenty for a single-node training cluster.
-    replicas: 1
-    # Keep the ActiveGate inside a 4-core / 8 GB codespace budget.
+    # Keep the ActiveGate inside a 4-core / 8 GB codespace budget (reference sizing).
     resources:
       requests:
         cpu: 150m
-        memory: 512Mi
+        memory: 256Mi
       limits:
-        cpu: "1"
-        memory: 1.5Gi
-    # kind's single node is a control-plane node (schedulable); no custom
-    # tolerations needed. Add nodeSelector/tolerations here for multi-node.
+        memory: 1Gi
 
   # NOTE: intentionally NO `oneAgent:` block. See header comment.

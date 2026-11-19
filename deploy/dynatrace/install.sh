@@ -121,7 +121,7 @@ render_dynakube | kubectl apply -f -
 # --- 5b. Recover a stuck ActiveGate on re-run -------------------------------
 # If the AG StatefulSet already exists (re-run / upgrade), the operator updates
 # its pod template image when a registry-affecting change lands (e.g. the
-# ISI-7553 use-public-registry annotation). A pod already wedged in
+# ISI-7565 switch back to the default tenant registry). A pod already wedged in
 # Init:ImagePullBackOff from the OLD image ref can stay stuck on a cached bad
 # pull, so force a rollout restart to pull the freshly-resolved image. No-op on
 # a first install (the StatefulSet does not exist yet).
@@ -138,15 +138,14 @@ fi
 # --- ActiveGate diagnostic (ground truth, no manual paste needed) -----------
 # Prints the EXACT image refs + pull error so a failure is self-documenting.
 # This is the executable answer to ISI-7565: the registry host of the init and
-# main AG images, the live use-public-registry annotation, the init container's
-# waiting reason/message (manifest-not-found vs auth vs timeout), and events.
+# main AG images, the DynaKube status/conditions, the init container's waiting
+# reason/message (manifest-not-found vs auth vs timeout), and recent events.
 ag_diag() {
   echo "----- ActiveGate diagnostic -------------------------------------------" >&2
-  echo "[dynakube] use-public-registry annotation on the LIVE object:" >&2
+  echo "[dynakube] phase + conditions (ScopeMissing here = apiToken lacks AG scopes):" >&2
   kubectl -n "$DT_NAMESPACE" get dynakube "$DYNAKUBE_NAME" \
-    -o jsonpath='{.metadata.annotations.feature\.dynatrace\.com/use-public-registry}' 2>/dev/null >&2 \
-    && echo >&2 || echo "  <annotation ABSENT on live DynaKube — fix not applied>" >&2
-  echo "[statefulset] resolved image refs (registry host tells public vs tenant):" >&2
+    -o jsonpath='  phase: {.status.phase}{"\n"}{range .status.conditions[*]}  - {.type}={.status} ({.reason}){"\n"}{end}' 2>/dev/null >&2 || true
+  echo "[statefulset] resolved image refs (registry host = tenant <env>.live.dynatrace.com):" >&2
   kubectl -n "$DT_NAMESPACE" get statefulset "$AG_STS" \
     -o jsonpath='  init : {.spec.template.spec.initContainers[*].image}{"\n"}  main : {.spec.template.spec.containers[*].image}{"\n"}' 2>/dev/null >&2 || true
   echo "[pod] ${AG_STS}-0 init-container waiting reason/message (the pull error):" >&2
@@ -173,14 +172,16 @@ done
 kubectl -n "$DT_NAMESPACE" rollout status statefulset "$AG_STS" --timeout=240s || {
   err "ActiveGate not ready. Capturing ground-truth diagnostic:"
   ag_diag
-  err "Reading the diagnostic above:"
-  err "  * annotation ABSENT   -> fix not applied: 'git pull origin main' + re-run this script,"
-  err "                           or recreate the codespace from the latest main."
-  err "  * image host = *.live.dynatrace.com (tenant) while annotation is present"
-  err "                        -> operator has not resolved the public image yet; wait ~1-2 min"
-  err "                           then re-run, or 'kubectl -n $DT_NAMESPACE rollout restart statefulset $AG_STS'."
-  err "  * image host = public.ecr.aws but still failing -> paste the diagnostic to ISI-7565"
-  err "                           (manifest-not-found = arch/tag, 401/403 = auth, timeout = egress)."
+  err "Reading the diagnostic above (AG pulls from the TENANT registry by default):"
+  err "  * DynaKube condition ScopeMissing / 401/403 pull error -> the operator apiToken"
+  err "                           lacks the ActiveGate scopes, so the operator cannot mint the"
+  err "                           tenant-registry pull-secret. Fix the DT_OPERATOR_TOKEN scopes"
+  err "                           (fleet-management:activegate.tokens:create + connection-info:read)"
+  err "                           — see deploy/dynatrace/README.md token scopes."
+  err "  * manifest-not-found     -> AG image tag missing for this arch; capture 'uname -m'."
+  err "  * timeout / dial error   -> egress to the tenant registry blocked."
+  err "  * transient (old pod)     -> 'kubectl -n $DT_NAMESPACE rollout restart statefulset $AG_STS' + re-run."
+  err "If it persists, paste this whole diagnostic block to ISI-7565."
   exit 1
 }
 
