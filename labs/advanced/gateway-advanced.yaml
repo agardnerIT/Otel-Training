@@ -154,7 +154,7 @@ spec:
       # No `batch` processor (deprecated): batching is on the exporter below.
 
     exporters:
-      otlphttp/dynatrace:
+      otlp_http/dynatrace:
         endpoint: ${env:DT_TENANT}/api/v2/otlp
         headers:
           Authorization: "Api-Token ${env:DT_INGEST_TOKEN}"
@@ -184,15 +184,15 @@ spec:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, k8sattributes, resource/costcenter, tail_sampling]
-          exporters: [otlphttp/dynatrace]
+          exporters: [otlp_http/dynatrace]
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, k8sattributes, resource/costcenter, transform/cardinality, cumulativetodelta]
-          exporters: [otlphttp/dynatrace]
+          exporters: [otlp_http/dynatrace]
         logs:
           receivers: [otlp]
           processors: [memory_limiter, k8sattributes, resource/costcenter, redaction, transform/pii]
-          exporters: [otlphttp/dynatrace]
+          exporters: [otlp_http/dynatrace]
       telemetry:
         logs:
           level: info

@@ -49,4 +49,4 @@ service:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, k8sattributes, cumulativetodelta, batch]
-      exporters: [otlphttp/dynatrace]
+      exporters: [otlp_http/dynatrace]

@@ -102,7 +102,7 @@ flowchart LR
   otlp["OTLP in<br/>(gRPC/HTTP)"] --> ml["memory_limiter<br/>(always first)"]
   ml --> k8s["k8sattributes<br/>(Kubernetes enrichment)"]
   k8s --> mid["step 4–7 processors<br/>cost / cardinality / PII / sampling"]
-  mid --> dtx["otlphttp → Dynatrace<br/>(sending_queue.batch)"]
+  mid --> dtx["otlp_http → Dynatrace<br/>(sending_queue.batch)"]
 ```
 
 !!! note "The three invariants"

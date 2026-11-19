@@ -42,11 +42,11 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, k8sattributes]
-      exporters: [otlphttp/dynatrace, spanmetrics]
+      exporters: [otlp_http/dynatrace, spanmetrics]
 
     # A dedicated metrics pipeline consumes the connector output. memory_limiter
     # first, no batch processor — invariants hold here too (batching is on the exporter).
     metrics/spanmetrics:
       receivers: [spanmetrics]
       processors: [memory_limiter]
-      exporters: [otlphttp/dynatrace]
+      exporters: [otlp_http/dynatrace]

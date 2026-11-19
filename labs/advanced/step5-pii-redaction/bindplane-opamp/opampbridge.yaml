@@ -45,4 +45,4 @@ spec:
       - transform
       - memory_limiter
     exporters:
-      - otlphttp
+      - otlp_http

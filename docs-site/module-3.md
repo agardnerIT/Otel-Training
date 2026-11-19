@@ -28,7 +28,7 @@ Why this order, one sentence each:
 
     ```yaml
     exporters:
-      otlphttp/dynatrace:
+      otlp_http/dynatrace:
         sending_queue:
           enabled: true
           sizer: items
@@ -78,7 +78,7 @@ answer** for processor order:
   the gateway runs in-cluster)
 - `cumulativetodelta` — **metrics pipeline only**: counters arrive cumulative,
   Dynatrace wants rates
-- **no `batch` processor** — batching is configured on the `otlphttp` exporter
+- **no `batch` processor** — batching is configured on the `otlp_http` exporter
   (`sending_queue.batch`), which exports to your Dynatrace tenant
 
 You will edit this file in the exercises. The discipline around it is
@@ -162,7 +162,7 @@ the exporter:
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, k8sattributes, transform/drop_player_id, cumulativetodelta]
-          exporters: [otlphttp/dynatrace]
+          exporters: [otlp_http/dynatrace]
 ```
 
 *(Keep the processor list already present in your file; the point is where the

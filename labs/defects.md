@@ -251,6 +251,13 @@ processors:
 **Module**: M3 - Collector as Control Point  
 **Status**: ✅ CONFIRMED - No Explicit Routing Configuration
 
+> **Note (naming hygiene):** the snippets below are preserved verbatim as the
+> original defect record. On collector `0.164.0` the exporter type `otlphttp`
+> and the processor `batch` are **deprecated spellings** — current configs use
+> `otlp_http` (and exporter-level `sending_queue.batch` instead of a `batch`
+> processor). The live configs were migrated; this historical narrative is left
+> unchanged on purpose.
+
 #### Current Pipeline Configuration:
 ```yaml
 service:
