@@ -18,16 +18,29 @@
 # (.devcontainer/bootstrap/deploy-environment.sh) call it on a throwaway copy of
 # the manifests, never on the committed source.
 #
-# Usage:  lite-filter.sh <manifests-dir>     # mutates files in <manifests-dir>
+# Usage:
+#   lite-filter.sh <manifests-dir>   # apply the lite profile in <manifests-dir>
+#   lite-filter.sh --list-dropped    # print the basenames lite drops, one per line
+#
+# `--list-dropped` is the single-source-of-truth accessor other scripts use so
+# they never hard-code the drop list (e.g. gitops/verify.sh skips these files
+# when validating a seeded lite repo — ISI-7657 R1).
 set -euo pipefail
 
-DIR="${1:?usage: lite-filter.sh <manifests-dir>}"
+# The two games no lab uniquely needs (WS7 audit, ISI-7633). Each file carries a
+# game's Deployment + Service, so removing the file removes the whole service.
+# THIS is the single source of truth for "what lite drops".
+LITE_DROP=(31-roulette.yaml 32-dice.yaml)
+
+if [[ "${1:-}" == "--list-dropped" ]]; then
+  printf '%s\n' "${LITE_DROP[@]}"
+  exit 0
+fi
+
+DIR="${1:?usage: lite-filter.sh <manifests-dir> | --list-dropped}"
 [[ -d "$DIR" ]] || { echo "lite-filter.sh: not a directory: $DIR" >&2; exit 1; }
 
-# 1) Drop the two games no lab uniquely needs (WS7 audit, ISI-7633). Each file
-#    carries a game's Deployment + Service, so removing the file removes the
-#    whole service from the applied/synced set.
-LITE_DROP=(31-roulette.yaml 32-dice.yaml)
+# 1) Remove the dropped game manifests from the (throwaway) manifest set.
 for f in "${LITE_DROP[@]}"; do
   if [[ -e "$DIR/$f" ]]; then
     rm -f "$DIR/$f"

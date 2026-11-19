@@ -28,6 +28,16 @@ GITEA_PASS="${GITEA_ADMIN_PASS:-trainingpass123}"
 CASINO_ORG="${CASINO_ORG:-casino}"
 CASINO_REPO="${CASINO_REPO:-casino}"
 EXPECTED_SRC="${EXPECTED_MANIFESTS_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)/deploy/casino/k8s}"
+# In the lite profile seed-gitea.sh deliberately drops some manifests
+# (roulette/dice), so §3 must not assert them in the seeded repo or it false-FAILs
+# a correct lite deploy (ISI-7657 R1). Pull the authoritative drop list from
+# lite-filter.sh (single source of truth) rather than hard-coding filenames.
+CASINO_PROFILE="${CASINO_PROFILE:-full}"
+LITE_FILTER="$(cd "$SCRIPT_DIR/.." && pwd)/deploy/casino/lite-filter.sh"
+LITE_DROPPED=""
+if [[ "$CASINO_PROFILE" == "lite" && -x "$LITE_FILTER" ]]; then
+  LITE_DROPPED="$("$LITE_FILTER" --list-dropped 2>/dev/null || true)"
+fi
 STAMP="${STAMP:-manual}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-$SCRIPT_DIR/evidence}"
 mkdir -p "$EVIDENCE_DIR"
@@ -216,10 +226,15 @@ if [[ -d "$EXPECTED_SRC" ]]; then
   for f in "$EXPECTED_SRC"/*.yaml; do
     [[ -e "$f" ]] || continue
     bn=$(basename "$f")
+    # Skip manifests the lite profile intentionally drops from the seed, so a
+    # correct lite seed does not false-FAIL (ISI-7657 R1). Empty in full mode.
+    if [[ -n "$LITE_DROPPED" ]] && printf '%s\n' "$LITE_DROPPED" | grep -qxF "$bn"; then
+      info "skipping $bn (dropped by CASINO_PROFILE=lite)"; continue
+    fi
     if [[ -f "$WORK/k8s/$bn" ]]; then :; else missing=$((missing+1)); info "repo missing $bn"; fi
   done
   [[ "$missing" -eq 0 ]] \
-    && pass "every canonical manifest is present in the synced repo (k8s/)" \
+    && pass "every canonical manifest is present in the synced repo (k8s/)$([[ -n "$LITE_DROPPED" ]] && echo ' [lite: roulette/dice excluded]')" \
     || fail "$missing canonical manifest(s) not found in the repo — reseed (seed-gitea.sh)"
   # Image placeholders must be RESOLVED in the seeded repo (ISI-7587). A literal
   # ${IMAGE_OWNER}/${IMAGE_TAG} reaching Argo CD is InvalidImageName and the pods
