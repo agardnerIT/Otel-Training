@@ -29,14 +29,16 @@ latency **by tier** cheaply, and alert on whale activity.
 
 ## The invariant (the whole lesson)
 
-The transform is inserted **between `k8sattributes` and `batch`**:
+The transform is inserted **last — right after `k8sattributes`** (this gateway
+batches at the exporter, so there is no `batch` processor):
 
 ```
-memory_limiter -> k8sattributes -> transform/bet_tier -> batch
+memory_limiter -> k8sattributes -> transform/bet_tier   (exporter batching)
 ```
 
 - `memory_limiter` stays **first** — it must sit ahead of anything that fans out work.
-- `batch` stays **last** — nothing enriches spans after they are batched for export.
+- There is **no `batch` processor** — batching happens on the exporter
+  (`sending_queue.batch`), so the transform runs **last**, right after enrichment.
 
 Only the **traces** pipeline changes; metrics and logs are untouched. The four
 `where` ranges are **mutually exclusive**, so exactly one tier is set and

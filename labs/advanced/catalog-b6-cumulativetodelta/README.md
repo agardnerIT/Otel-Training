@@ -50,10 +50,10 @@ The processor position is **unchanged** — only its body changes from `{}` to t
 explicit config:
 
 ```
-memory_limiter -> k8sattributes -> cumulative_to_delta -> batch
+memory_limiter -> k8sattributes -> cumulative_to_delta   (exporter batching)
 ```
 
-- `memory_limiter` stays **first**; `batch` stays **last**.
+- `memory_limiter` stays **first**; there is **no `batch` processor** (batching is on the exporter).
 - `cumulative_to_delta` supports the **metrics** signal only — it lives on the
   metrics pipeline alone (adding it to traces/logs fails validation).
 
