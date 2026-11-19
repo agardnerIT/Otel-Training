@@ -144,6 +144,69 @@ origin (same pattern as `PARTICIPANT_ID`, defaulting to the upstream owner) and
 renders at seed time before Argo CD syncs. First launch needs **no** pre-build:
 the manifests default to the upstream **baseline** public images.
 
+The owner decision lives in `deploy/casino/image-owner.sh` and is deliberately
+**baseline-first**:
+
+1. An explicit `IMAGE_OWNER` in the env always wins (no probe).
+2. Otherwise the owner is parsed from `git remote get-url origin`. If that is the
+   **upstream** repo → baseline, done.
+3. For a real **fork**, the resolver runs a one-shot GHCR **preflight** (a
+   manifest `HEAD` on `ghcr.io/<fork>/otel-training/vegasapp-frontend:<tag>`). Only
+   if the fork build is **proven published** does it adopt `<fork>`; otherwise it
+   stays on the upstream baseline and says so. The probe is short-timeout and
+   fail-soft — it never hangs or aborts the bring-up, and never points at an image
+   that does not exist (which would be `ImagePullBackOff`).
+
+```bash
+# What owner will the seed use here?
+bash deploy/casino/image-owner.sh owner
+# Is a fork build published yet?
+bash deploy/casino/image-owner.sh preflight <fork-owner>
+```
+
+## Two git loops: edit a manifest vs deploy your own build
+
+The casino lab has **two** push-to-deploy loops. Know which one a change needs:
+
+**Loop 1 — manifest / config → Gitea → Argo CD.** Editing a file under
+`k8s/` (a `Deployment`, the `vegas-casino-config` ConfigMap, the loadgen script,
+…) changes only Kubernetes YAML. Commit + push to the casino repo in Gitea and
+**Argo CD syncs it** — no image rebuild. This is the loop the advanced catalog
+"ship via GitOps" steps use for collector/config edits.
+
+**Loop 2 — service code → your fork → Actions → image → re-seed/rollout.**
+Editing a service's **source** under `apps/casino/<svc>/` needs a **new image**,
+so Argo CD cannot pick it up from a manifest change alone. The flow is:
+
+```text
+edit apps/casino/<svc>/…  ->  git push (your fork)  ->  fork Actions build+publish
+   ghcr.io/<you>/otel-training/vegasapp-<svc>:<tag>  ->  deploy-my-build.sh  ->  Argo CD syncs
+```
+
+### One-time prerequisite — enable fork Actions
+
+A brand-new fork has GitHub Actions **disabled**. Enable them **once** so the
+"Build casino images" workflow runs on your pushes:
+
+> Your fork → **Actions** tab → **"I understand my workflows, go ahead and enable them"**.
+
+(You also only ever need the pull secret if your fork packages are **private**;
+the upstream baseline packages are public and pull with no token.)
+
+### Deploy my build
+
+After your push, the fork's Actions take **~1–3 min** to build + publish all
+`vegasapp-*` images at the pinned tag (`deploy/casino/IMAGE_VERSION`). Then:
+
+```bash
+bash deploy/casino/deploy-my-build.sh
+```
+
+It derives your owner from the fork origin, **preflights** that your images are
+published (if not, it changes nothing and tells you the Actions run hasn't
+finished), wires the `ghcr-pull` secret for private fork images, re-seeds Gitea
+with `IMAGE_OWNER=<you>`, and nudges Argo CD to sync. Re-running with no new build
+is a no-op. On the direct (no-Argo) debug path, run it with `DEPLOY_MODE=direct`.
 ## Image source — GHCR (default) or the Gitea registry alias (ISI-7640 / WS-C)
 
 The same renderer also switches the **registry** the 7 casino-built `vegasapp-*`
