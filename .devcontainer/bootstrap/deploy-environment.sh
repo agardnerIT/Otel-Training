@@ -29,6 +29,15 @@
 #   --help             show this help
 #
 # Env:
+#   CASINO_PROFILE=full|lite    casino footprint (default full — ISI-7653). lite
+#                                 drops the roulette + dice services (the only two
+#                                 no lab uniquely needs — ISI-7633 WS7 audit),
+#                                 narrows the k6 loadgen to the surviving games,
+#                                 and makes the Dynatrace ActiveGate optional
+#                                 (k8s-monitoring is skipped; app OTLP still
+#                                 exports via the OTel collector). Pair with
+#                                 DEPLOY_MODE=direct for a Gitea-free bring-up, or
+#                                 set LITE_WITH_ACTIVEGATE=1 to keep the ActiveGate.
 #   DEPLOY_MODE=gitops|direct   casino via Argo CD (default) or direct kubectl apply
 #   GITOPS_PROVIDER=gitlab|gitea  git host for the gitops path (ISI-6927):
 #                                 gitlab (default) = external Dynatrace-solution
@@ -55,9 +64,21 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # --- Config ------------------------------------------------------------------
 DEPLOY_MODE="${DEPLOY_MODE:-gitops}"
+CASINO_PROFILE="${CASINO_PROFILE:-full}"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-${PARTICIPANT_ID:-otel-training}}"
 SKIP_DYNATRACE=""
 DO_RESET=""
+
+# Lite makes the Dynatrace ActiveGate (k8s-monitoring) optional to shrink the
+# footprint (ISI-7653). App telemetry is unaffected: the OTel collector exports
+# app OTLP to the tenant independently of the ActiveGate, which only adds K8s-API
+# monitoring. Set LITE_WITH_ACTIVEGATE=1 to keep the ActiveGate even in lite.
+LITE_SKIP_AG=""
+if [[ "$CASINO_PROFILE" == "lite" && -z "${LITE_WITH_ACTIVEGATE:-}" ]]; then
+  LITE_SKIP_AG=1
+fi
+# Export so the Gitea seed (and any child script) applies the same profile.
+export CASINO_PROFILE
 
 EVIDENCE_DIR="${EVIDENCE_DIR:-$REPO_ROOT/.devcontainer/evidence}"
 # Stamp is injected by the caller for deterministic filenames; `date` is fine at
@@ -155,6 +176,11 @@ done
 case "$DEPLOY_MODE" in
   gitops|direct) ;;
   *) die "DEPLOY_MODE must be 'gitops' or 'direct' (got '$DEPLOY_MODE')" ;;
+esac
+
+case "$CASINO_PROFILE" in
+  full|lite) ;;
+  *) die "CASINO_PROFILE must be 'full' or 'lite' (got '$CASINO_PROFILE')" ;;
 esac
 
 # --- Concurrency lock (ISI-7628/#63) ----------------------------------------
@@ -275,6 +301,10 @@ phase 2/4 "dynatrace — operator + DynaKube (k8s-monitoring)"
 if [[ -n "$SKIP_DYNATRACE" ]]; then
   warn "--skip-dynatrace set — skipping the Dynatrace phase"
   record dynatrace skip "--skip-dynatrace"
+elif [[ -n "$LITE_SKIP_AG" ]]; then
+  warn "CASINO_PROFILE=lite — skipping the Dynatrace ActiveGate (k8s-monitoring optional in lite)"
+  log "app OTLP still exports via the OTel collector; set LITE_WITH_ACTIVEGATE=1 to deploy the ActiveGate in lite"
+  record dynatrace skip "lite profile (ActiveGate optional)"
 elif [[ -z "$DT_READY" ]]; then
   warn "DT_* absent — auto-skipping Dynatrace (operator needs the API token)"
   log "the Kubernetes-monitoring lab is limited until DT_* are set + re-run"
@@ -359,6 +389,15 @@ else
       # InvalidImageName (ISI-7617 review). Skip the apply and flag a hard fail.
       SRC_DIR="$REPO_ROOT/deploy/casino/k8s" bash "$RENDER" -o "$APPLY_DIR" || RENDER_OK=0
     fi
+    # Casino "lite" profile (ISI-7653): drop roulette+dice and narrow the loadgen
+    # before applying. Only ever mutate a rendered temp dir, never the committed
+    # source manifests (guard below). Default "full" => no-op.
+    if [[ "$RENDER_OK" -eq 1 && "$CASINO_PROFILE" == "lite" && "$APPLY_DIR" != "$REPO_ROOT/deploy/casino/k8s" ]]; then
+      log "CASINO_PROFILE=lite — dropping roulette+dice and narrowing the loadgen"
+      bash "$REPO_ROOT/deploy/casino/lite-filter.sh" "$APPLY_DIR" || warn "lite-filter reported errors (continuing)"
+    elif [[ "$CASINO_PROFILE" == "lite" ]]; then
+      warn "CASINO_PROFILE=lite but manifests were not rendered to a temp dir — NOT filtering in place to protect the source"
+    fi
     if [[ "$RENDER_OK" -ne 1 ]]; then
       warn "render-images.sh failed — refusing to apply unrendered placeholder manifests (InvalidImageName)"
       CASINO_KICK_FAIL="render-images.sh non-zero"
@@ -438,8 +477,8 @@ if [[ -n "$DT_READY" ]]; then
 fi
 # Gateway API exposure (ISI-6795): verify.sh self-selects offline/live.
 run_verify gateway "$REPO_ROOT/deploy/gateway/verify.sh"
-# Dynatrace verify only when the phase actually ran.
-if [[ -n "$DT_READY" && -z "$SKIP_DYNATRACE" ]]; then
+# Dynatrace verify only when the phase actually ran (not skipped by flag or lite).
+if [[ -n "$DT_READY" && -z "$SKIP_DYNATRACE" && -z "$LITE_SKIP_AG" ]]; then
   run_verify dynatrace "$REPO_ROOT/deploy/dynatrace/verify.sh" env "KIND_CLUSTER_NAME=$KIND_CLUSTER_NAME"
 fi
 # Casino verify needs the app to exist (either path).
@@ -457,6 +496,7 @@ echo "${BOLD} OTel Training — M0 environment check${RST}"
 echo "${BOLD}================================================================${RST}"
 printf " %-18s %s\n" "cluster"     "${KIND_CLUSTER_NAME}"
 printf " %-18s %s\n" "deploy mode" "${DEPLOY_MODE}"
+printf " %-18s %s\n" "casino profile" "${CASINO_PROFILE}$([[ "$CASINO_PROFILE" == lite ]] && echo ' (roulette+dice dropped)')"
 printf " %-18s %s\n" "dynatrace"   "$([[ -n "$DT_READY" ]] && echo 'configured' || echo 'DEGRADED (no DT_*)')"
 echo " ---------------------------------------------------------------"
 fails=0

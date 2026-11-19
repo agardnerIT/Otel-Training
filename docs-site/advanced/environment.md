@@ -36,6 +36,16 @@ flowchart LR
 | Gateway collector | `observability` | The single control point. All collector fixes in steps 4–7 land here. |
 | Dynatrace Operator | `dynatrace` | Kubernetes monitoring + ActiveGate. |
 
+!!! note "Lite profile — a smaller casino"
+    On a tight Codespace you can bring the casino up in its **`lite`** profile:
+    `CASINO_PROFILE=lite bash .devcontainer/bootstrap/deploy-environment.sh`.
+    Lite drops the **roulette** and **dice** services (the only two no lab
+    uniquely needs — ISI-7633 audit), narrows the k6 load-gen to the surviving
+    games, and makes the Dynatrace **ActiveGate** optional (app telemetry still
+    flows through the OTel collector). Pair with `DEPLOY_MODE=direct` for a
+    Gitea-free `kubectl apply` bring-up. Default is **`full`** (the diagram
+    above). Details: [`deploy/casino/README.md`](https://github.com/henrikrexed/Otel-Training/blob/main/deploy/casino/README.md).
+
 ## The lab mechanic: edit → commit → sync
 
 Your loop for the whole track:
