@@ -34,17 +34,19 @@ CASINO_NAMESPACE="${CASINO_NAMESPACE:-casino}"
 PULL_SECRET_NAME="${CASINO_PULL_SECRET_NAME:-ghcr-pull}"
 REGISTRY="${CASINO_REGISTRY:-ghcr.io}"
 
-# Prefer an explicit, purpose-minted package-read token. Fall back to GITHUB_PAT
-# only as a convenience — it usually CANNOT read the private packages, so the
-# pull will still fail and the operator should make the packages public instead.
-TOKEN="${CASINO_PULL_TOKEN:-${GITHUB_PAT:-}}"
+# Prefer an explicit, purpose-minted package-read token. Fall back to the tokens a
+# fork codespace naturally carries (GITHUB_TOKEN / GH_TOKEN) and then GITHUB_PAT.
+# For a FORK's OWN private images (ISI-7589 c3) these usually DO have read:packages
+# on the attendee's namespace, so the fork pull works; for the upstream baseline
+# (public) no token is needed at all and this script is a no-op.
+TOKEN="${CASINO_PULL_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-${GITHUB_PAT:-}}}}"
 # ghcr.io ignores the username for token auth, but it must be non-empty.
 USERNAME="${CASINO_PULL_USER:-${GITHUB_USER:-${GITHUB_ACTOR:-henrikrexed}}}"
 
 log() { echo "==> ensure-casino-pull-secret: $*"; }
 
 if [[ -z "$TOKEN" ]]; then
-  log "no CASINO_PULL_TOKEN/GITHUB_PAT set — assuming casino images are PUBLIC (D2 default); skipping pull secret."
+  log "no CASINO_PULL_TOKEN/GITHUB_TOKEN/GH_TOKEN/GITHUB_PAT set — assuming casino images are PUBLIC (D2 default); skipping pull secret."
   exit 0
 fi
 

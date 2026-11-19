@@ -146,6 +146,22 @@ mkdir -p "$WORK/k8s"
 # a shared Dynatrace tenant can be filtered per participant. Resolved the same way
 # as create-cluster.sh / deploy-environment.sh; defaults to otel-training.
 CLUSTER_NAME="${CLUSTER_NAME:-${KIND_CLUSTER_NAME:-${PARTICIPANT_ID:-otel-training}}}"
+# Fork-aware image owner (ISI-7589 c3). Baseline-first: if this repo's origin is
+# the upstream repo, or a fork has not yet published its vegasapp-* images at the
+# pinned tag, IMAGE_OWNER resolves to the upstream owner so a brand-new fork comes
+# up on the baseline public images with zero pre-build. Once the attendee's fork
+# build is published (or IMAGE_OWNER is set explicitly, e.g. by deploy-my-build.sh),
+# it resolves to their namespace. The resolver only probes the registry for a real
+# fork; it never fails the seed. Export it so render-images.sh substitutes it.
+IMAGE_OWNER_HELPER="$REPO_ROOT/deploy/casino/image-owner.sh"
+if [[ -f "$IMAGE_OWNER_HELPER" ]]; then
+  # shellcheck source=deploy/casino/image-owner.sh
+  source "$IMAGE_OWNER_HELPER"
+  # casino_resolve_image_owner logs its reason to stderr; capture just the owner.
+  IMAGE_OWNER="$(casino_resolve_image_owner "$REPO_ROOT")"
+  export IMAGE_OWNER
+  log "image owner resolved to '$IMAGE_OWNER'"
+fi
 RENDER="$REPO_ROOT/deploy/casino/render-images.sh"
 if [[ -f "$RENDER" ]]; then
   log "rendering image owner/tag + cluster name (IMAGE_OWNER=${IMAGE_OWNER:-henrikrexed} IMAGE_TAG=${IMAGE_TAG:-$(tr -d '[:space:]' < "$REPO_ROOT/deploy/casino/IMAGE_VERSION" 2>/dev/null || echo latest)} CLUSTER_NAME=${CLUSTER_NAME})"
