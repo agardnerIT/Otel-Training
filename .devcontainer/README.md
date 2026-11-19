@@ -41,6 +41,9 @@ summary below must agree with it.
 | `DT_INGEST_TOKEN` | OTLP data-ingest token — **platform token `dt0s16`** (`openpipeline:*:ingest` + `storage:metrics:write`); two consumers, the collectors **and** the operator `dataIngestToken` |
 | `DT_PLATFORM_TOKEN` | platform token `dt0s16` used **only** by `dtctl` (**optional** — dtctl labs only; separate scope set from `DT_OPERATOR_TOKEN`) |
 | `DT_PLATFORM_URL` | *(optional)* Gen3 SaaS apps URL for `dtctl` (`https://<id>.apps.dynatrace.com`); derived from `DT_TENANT` (`live` → `apps`) when unset |
+| `PARTICIPANT_ID` | **unique per attendee** — names the kind cluster, `k8s.cluster.name`, and DynaKube; drives `service.name` isolation. DNS-label-safe (lowercase alphanumeric + `-`). Blank → `otel-training` |
+| `KIND_CLUSTER_NAME` | advanced override — set to name the cluster directly; wins over `PARTICIPANT_ID`. Normally unset |
+| `WORKSHOP_DISPENSER_URL` / `WORKSHOP_ROOM_PASSWORD` | *(advanced track, opencode)* LLM dispenser — **not** Dynatrace tokens (ISI-7138) |
 
 > **All three `DT_*` tokens are platform tokens (`dt0s16`), not classic `dt0c01`.**
 > This is a Gen3 tenant and the Operator (≥ 1.10.0) accepts platform tokens in the
@@ -48,9 +51,6 @@ summary below must agree with it.
 > each carries a different scope set (see the canonical
 > [setup.md table](../../docs-site/setup.md#environment-variables) and
 > [`deploy/dynatrace/README.md`](../../deploy/dynatrace/README.md#token-scopes-least-privilege)).
-| `PARTICIPANT_ID` | **unique per attendee** — names the kind cluster, `k8s.cluster.name`, and DynaKube; drives `service.name` isolation. DNS-label-safe (lowercase alphanumeric + `-`). Blank → `otel-training` |
-| `KIND_CLUSTER_NAME` | advanced override — set to name the cluster directly; wins over `PARTICIPANT_ID`. Normally unset |
-| `WORKSHOP_DISPENSER_URL` / `WORKSHOP_ROOM_PASSWORD` | *(advanced track, opencode)* LLM dispenser — **not** Dynatrace tokens (ISI-7138) |
 
 To set them: GitHub → repo (or org) → **Settings → Secrets and variables →
 Codespaces** → add each as a Codespaces secret scoped to this repo. They surface
