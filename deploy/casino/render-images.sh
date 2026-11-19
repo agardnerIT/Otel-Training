@@ -20,14 +20,25 @@
 #
 # Env:
 #   IMAGE_OWNER  GHCR namespace owner        (default: henrikrexed — upstream baseline)
-#   IMAGE_TAG    image tag                   (default: latest     — CI default-branch tag)
+#   IMAGE_TAG    image tag                   (default: ./IMAGE_VERSION, else latest)
 #   SRC_DIR      source manifests directory  (default: <this dir>/k8s)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Default tag = the immutable version CI publishes (ISI-7625 D1). IMAGE_VERSION
+# is the single source of truth, read by both this renderer and the build
+# workflow (.github/workflows/casino-images.yml) so the tag the manifests pin
+# always exists as a published package. Fall back to :latest only if the file
+# is absent (older checkouts / unexpected layout).
+VERSION_FILE="$SCRIPT_DIR/IMAGE_VERSION"
+if [[ -r "$VERSION_FILE" ]]; then
+  DEFAULT_TAG="$(tr -d '[:space:]' < "$VERSION_FILE")"
+fi
+DEFAULT_TAG="${DEFAULT_TAG:-latest}"
+
 IMAGE_OWNER="${IMAGE_OWNER:-henrikrexed}"
-IMAGE_TAG="${IMAGE_TAG:-latest}"
+IMAGE_TAG="${IMAGE_TAG:-$DEFAULT_TAG}"
 SRC_DIR="${SRC_DIR:-$SCRIPT_DIR/k8s}"
 
 OUT_DIR=""

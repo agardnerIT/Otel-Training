@@ -49,10 +49,15 @@ jobs:
           - slots
           - blackjack
           - dashboard
-          - gateway
           - roulette
           - dice
           - scoring
+          # NOTE: `gateway` is intentionally NOT built — nothing in the training
+          # topology deploys it (deploy/casino/README.md "Design decisions"
+          # explicitly excludes the API-gateway service). Building an image no
+          # manifest references just burned CI minutes (ISI-7625 D3). If the
+          # gateway ever enters the deployed topology, re-add it here AND add a
+          # manifest — don't re-add it on its own.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,6 +69,15 @@ jobs:
       - name: Compute image name
         id: img
         run: echo "name=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/otel-training/vegasapp-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+
+      # Single source of truth for the immutable version tag (ISI-7625 D1):
+      # deploy/casino/IMAGE_VERSION. The casino manifests default IMAGE_TAG to
+      # this same file (render-images.sh), so the tag the manifests pin is the
+      # tag CI publishes. To cut a new image set: bump deploy/casino/IMAGE_VERSION
+      # in a PR — the push republishes every service at the new immutable tag.
+      - name: Read casino image version
+        id: ver
+        run: echo "value=$(tr -d '[:space:]' < deploy/casino/IMAGE_VERSION)" >> "$GITHUB_OUTPUT"
 
       # QEMU is only needed to emulate arm64 RUN steps (npm/pip/mvn) on the
       # amd64 runner. The Go `dice` service cross-compiles natively via
@@ -91,6 +105,7 @@ jobs:
             org.opencontainers.image.title=vegasapp-${{ matrix.service }}
             org.opencontainers.image.description=OTel training casino — ${{ matrix.service }} service
           tags: |
+            type=raw,value=${{ steps.ver.outputs.value }}
             type=sha,format=short
             type=ref,event=branch
             type=ref,event=pr

@@ -2,6 +2,11 @@
 # casino emits a steady stream of telemetry (and the planted defects stay visible
 # downstream) for the whole training session, with no manual clicking.
 #
+# Image: upstream grafana/k6 (multi-arch amd64+arm64), pinned. There is NO custom
+# vegasapp-k6 image — the load script lives in the ConfigMap below and is mounted
+# into the stock k6 image at /scripts (ISI-7625 D2b). This removes the only
+# casino image that was never built/published by CI.
+#
 # Modelled as a Job (not a Deployment): k6 runs one long test for DURATION then
 # exits cleanly. DURATION is sized to cover a ~3h session. To re-run after it
 # completes, delete the Job and let Argo CD recreate it, or bump DURATION.
@@ -9,6 +14,92 @@
 #
 # The init container waits for the frontend /health before starting load, but is
 # non-fatal (exits 0 on timeout) so k6 still attempts the run.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vegas-casino-loadgen-script
+  labels:
+    app.kubernetes.io/name: vegas-casino
+    app.kubernetes.io/instance: vegas-casino
+    app.kubernetes.io/part-of: casino
+    app.kubernetes.io/managed-by: argocd
+    app.kubernetes.io/component: loadgen
+data:
+  casino-load.js: |
+    // Casino load script for the OTel-training frontend. Each VU logs in a
+    // random player, browses the lobby, then plays the four games via the
+    // frontend HTTP API (frontend fans these out over gRPC to the game services,
+    // so every game pod sees traffic and emits spans/metrics/logs).
+    //
+    // Env (set by the Job): CASINO_URL, VUS, DURATION, RAMP_UP.
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+
+    const BASE = __ENV.CASINO_URL || 'http://vegas-casino-frontend:3000';
+    const VUS = Number(__ENV.VUS || 3);
+
+    export const options = {
+      scenarios: {
+        casino: {
+          executor: 'ramping-vus',
+          startVUs: 0,
+          stages: [
+            { duration: __ENV.RAMP_UP || '30s', target: VUS },
+            { duration: __ENV.DURATION || '3h', target: VUS },
+            { duration: '10s', target: 0 },
+          ],
+          gracefulStop: '15s',
+        },
+      },
+      // Keep going when the planted defects make some calls fail — a non-2xx is
+      // expected signal here, not a reason to abort the run.
+      thresholds: {},
+    };
+
+    const JSON_HDR = { headers: { 'Content-Type': 'application/json' } };
+
+    function player() {
+      return `loadgen-${__VU}-${Math.floor(Math.random() * 1000)}`;
+    }
+
+    export default function () {
+      const username = player();
+
+      // 1. Land on the lobby and list the games.
+      check(http.get(`${BASE}/`), { 'lobby 200': (r) => r.status === 200 });
+      check(http.get(`${BASE}/api/games`), { 'games listed': (r) => r.status === 200 });
+
+      // 2. Log in + seed a balance.
+      // Login validates email + a profileType in ['partner','customer','dynatracer','other'],
+      // so send a well-formed payload (otherwise it 400s and user.login shows a
+      // 100% error rate in the lab).
+      const creds = JSON.stringify({
+        Username: username,
+        Email: `${username}@loadgen.test`,
+        ProfileType: 'other',
+        Balance: 1000,
+      });
+      check(http.post(`${BASE}/api/user/login`, creds, JSON_HDR), { 'login 2xx': (r) => r.status >= 200 && r.status < 300 });
+      http.post(`${BASE}/api/user/init`, JSON.stringify({ Username: username, Balance: 1000 }), JSON_HDR);
+      http.get(`${BASE}/api/user/balance?username=${username}`);
+
+      // 3. Play each game. The frontend routes these to the slots / roulette /
+      //    dice / blackjack services over gRPC.
+      const bet = JSON.stringify({ Username: username, BetAmount: 10 });
+      http.post(`${BASE}/api/games/slots/spin`, bet, JSON_HDR);
+      http.post(`${BASE}/api/games/roulette/spin`,
+        JSON.stringify({ Username: username, BetAmount: 10, BetType: 'red' }), JSON_HDR);
+      http.post(`${BASE}/api/dice/roll`,
+        JSON.stringify({ Username: username, BetAmount: 10, BetType: 'pass' }), JSON_HDR);
+      http.post(`${BASE}/api/games/blackjack/deal`, bet, JSON_HDR);
+
+      // 4. Read-side traffic (dashboard + leaderboard aggregate the games).
+      http.get(`${BASE}/api/leaderboard`);
+      http.get(`${BASE}/api/dashboard`);
+
+      sleep(1 + Math.random() * 2);
+    }
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -54,8 +145,12 @@ spec:
               exit 0
       containers:
         - name: k6
-          image: "ghcr.io/${IMAGE_OWNER}/otel-training/vegasapp-k6:${IMAGE_TAG}"
+          image: grafana/k6:0.54.0
           imagePullPolicy: IfNotPresent
+          command:
+            - k6
+            - run
+            - /scripts/casino-load.js
           env:
             - name: CASINO_URL
               value: "http://vegas-casino-frontend:3000"
@@ -65,6 +160,10 @@ spec:
               value: "3h"
             - name: RAMP_UP
               value: "30s"
+          volumeMounts:
+            - name: loadgen-script
+              mountPath: /scripts
+              readOnly: true
           resources:
             requests:
               memory: "128Mi"
@@ -72,3 +171,7 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "200m"
+      volumes:
+        - name: loadgen-script
+          configMap:
+            name: vegas-casino-loadgen-script

@@ -28,10 +28,10 @@ source of truth** the GitOps path (ISI-6796) consumes — Argo CD syncs
 | `k8s/33-blackjack.yaml`   | Blackjack game (Node) — http 8084 / gRPC 50054 |
 | `k8s/40-dashboard.yaml`   | Dashboard — http 3001 / gRPC 50055 |
 | `k8s/50-frontend.yaml`    | Frontend web UI — http 3000 (trace root) |
-| `k8s/60-loadgen-k6.yaml`  | k6 load-gen Job — continuous traffic for the session |
+| `k8s/60-loadgen-k6.yaml`  | k6 load-gen Job (stock `grafana/k6`) + script ConfigMap |
 | `verify.sh`               | live-cluster acceptance checks (ISI-6794 AC) |
 
-21 resources total (9 Deployments, 9 Services, 1 Job, 1 ConfigMap, 1 ServiceAccount).
+22 resources total (9 Deployments, 9 Services, 1 Job, 2 ConfigMaps, 1 ServiceAccount).
 
 ## Design decisions
 
@@ -64,7 +64,16 @@ source of truth** the GitOps path (ISI-6796) consumes — Argo CD syncs
   The `image:` lines carry `${IMAGE_OWNER}`/`${IMAGE_TAG}` **placeholders**; the
   deploy path resolves them with `render-images.sh` (see below) so a fork can
   repoint images at its own GHCR namespace. Baseline defaults:
-  `IMAGE_OWNER=henrikrexed`, `IMAGE_TAG=latest`.
+  `IMAGE_OWNER=henrikrexed`, `IMAGE_TAG=` the immutable version in
+  [`IMAGE_VERSION`](IMAGE_VERSION).
+- **Image tag = immutable version (ISI-7625 D1).** [`IMAGE_VERSION`](IMAGE_VERSION)
+  (currently `0.39`) is the **single source of truth** for the tag. The build
+  workflow reads it and publishes every service at that immutable `type=raw`
+  tag (alongside `sha-<short>` and, on the default branch, `latest`);
+  `render-images.sh` reads the *same* file as its default `IMAGE_TAG`. So the tag
+  the manifests pin always exists as a published package — no more pinning a tag
+  CI never built. **To cut a new image set:** bump `IMAGE_VERSION` in a PR; the
+  merge push republishes all services at the new tag and every deploy pins it.
 - **Resource sizing** is tuned for the shared kind node: ~650m CPU / ~1.5 Gi of
   memory *requests* across the whole app, leaving headroom for the collectors
   and operators that share the cluster.
@@ -106,10 +115,12 @@ the pull work:
   already references `ghcr-pull`, so every pod uses it. No token set → no-op,
   assumes public images.
 
-> **k6 loadgen** (`60-loadgen-k6.yaml`) references `vegasapp-k6`, which is **not**
-> vendored under `apps/casino/` and therefore not built by the workflow. It is
-> templated for owner/tag consistency but has no CI-published baseline yet —
-> vendoring + build-matrix coverage is a c1/c4 follow-up (ISI-7586 / ISI-7588).
+> **k6 loadgen** (`60-loadgen-k6.yaml`) runs the **stock upstream `grafana/k6`**
+> image (multi-arch, pinned) — there is no `vegasapp-k6` image to build or pull.
+> The load script lives in the `vegas-casino-loadgen-script` ConfigMap and is
+> mounted at `/scripts/casino-load.js`; it logs in players and plays all four
+> games through the frontend HTTP API (ISI-7625 D2b). To tune load, edit `VUS` /
+> `DURATION` on the Job, or the script in the ConfigMap.
 
 ## Planted defects
 
@@ -138,8 +149,11 @@ Once Argo CD owns the `casino` namespace, do **not** `kubectl apply` by hand —
 
 ## Verify
 
-Offline (anytime): `kubeconform -strict deploy/casino/k8s/*.yaml` — all 21
-resources validate.
+Offline (anytime):
+`kubeconform -strict -ignore-missing-schemas deploy/casino/k8s/*.yaml` — the 22
+deployed app resources validate. (`-ignore-missing-schemas` skips the Gateway
+API CRs in `70/71/72-*.yaml`, which have no bundled schema and are not part of
+the deployed topology — see the gateway exclusion note above.)
 
 Live (on the cluster, after deploy):
 

@@ -34,7 +34,7 @@ spec:
         runAsUser: 1000
       serviceAccountName: vegas-casino
       containers:
-        - name: blackjack-service
+        - name: blackjack
           securityContext:
             capabilities:
               drop: ["ALL"]
