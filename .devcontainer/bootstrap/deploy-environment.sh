@@ -75,6 +75,58 @@ die()   { echo "${RED}${BOLD}ERROR:${RST} $*" >&2; exit 1; }
 
 usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
 
+# --- Fail-fast pod health (ISI-7628/#63) ------------------------------------
+# Terminal container states that will NEVER self-heal on their own — waiting out
+# a rollout timeout on these just wastes the attendee's time and then reports a
+# generic "not ready". Detect them early and surface the ACTUAL reason.
+TERMINAL_REASONS_RE='^(ImagePullBackOff|ErrImagePull|InvalidImageName|CreateContainerConfigError|CreateContainerError|RunContainerError|ImageInspectError|CrashLoopBackOff)$'
+
+# scan_terminal_pods <namespace> — print "  pod/container: Reason — message" for
+# every container stuck in a terminal state; silent if there are none. Returns 0
+# always (callers test the captured output), kubectl-only (no jq dependency).
+scan_terminal_pods() {
+  local ns="$1" pod cname reason msg
+  while read -r pod; do
+    [[ -z "$pod" ]] && continue
+    while IFS='|' read -r cname reason msg; do
+      [[ -z "$reason" ]] && continue
+      if [[ "$reason" =~ $TERMINAL_REASONS_RE ]]; then
+        printf '  %s/%s: %s%s\n' "$pod" "$cname" "$reason" "${msg:+ — $msg}"
+      fi
+    done < <(kubectl -n "$ns" get pod "$pod" \
+               -o jsonpath='{range .status.containerStatuses[*]}{.name}{"|"}{.state.waiting.reason}{"|"}{.state.waiting.message}{"\n"}{end}' 2>/dev/null)
+  done < <(kubectl -n "$ns" get pods -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n')
+}
+
+# ns_all_deploys_ready <namespace> — 0 only when every Deployment reports
+# readyReplicas == desired (and desired > 0), i.e. the app is actually up.
+ns_all_deploys_ready() {
+  local ns="$1" deploys d desired ready
+  deploys="$(kubectl -n "$ns" get deploy -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)"
+  [[ -z "$deploys" ]] && return 1
+  for d in $deploys; do
+    desired="$(kubectl -n "$ns" get deploy "$d" -o jsonpath='{.spec.replicas}' 2>/dev/null)"
+    ready="$(kubectl -n "$ns" get deploy "$d" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)"
+    [[ "${ready:-0}" == "${desired:-0}" && "${desired:-0}" -gt 0 ]] || return 1
+  done
+  return 0
+}
+
+# wait_ns_ready <namespace> <timeout-seconds> — poll to Ready, FAILING FAST on
+# terminal pod states. This replaces long stacked rollout waits with one bounded
+# poll that short-circuits the moment the app is up OR provably stuck.
+# Returns: 0 ready | 1 terminal state (reason already printed) | 2 timeout.
+wait_ns_ready() {
+  local ns="$1" timeout="${2:-180}" waited=0 interval=5 term
+  while (( waited < timeout )); do
+    term="$(scan_terminal_pods "$ns")"
+    if [[ -n "$term" ]]; then echo "$term" >&2; return 1; fi
+    if ns_all_deploys_ready "$ns"; then return 0; fi
+    sleep "$interval"; waited=$((waited + interval))
+  done
+  return 2
+}
+
 # --- Parse flags -------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -90,6 +142,19 @@ case "$DEPLOY_MODE" in
   gitops|direct) ;;
   *) die "DEPLOY_MODE must be 'gitops' or 'direct' (got '$DEPLOY_MODE')" ;;
 esac
+
+# --- Concurrency lock (ISI-7628/#63) ----------------------------------------
+# Two bring-up runs racing (e.g. a manual run during a postStart self-heal) fight
+# over the same namespaces and leave confusing half-states. Serialise with a
+# non-blocking flock: a second run exits immediately with a clear message rather
+# than interleaving. Covers --reset too (it mutates the same resources).
+LOCK_FILE="${DEPLOY_LOCK_FILE:-/tmp/otel-training-deploy.lock}"
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK_FILE" || die "cannot open lock file $LOCK_FILE"
+  if ! flock -n 9; then
+    die "another bring-up is already running (lock: $LOCK_FILE). Wait for it to finish, or remove the lock if it is stale."
+  fi
+fi
 
 # ============================================================================
 # RESET — tear everything down, keep the cluster. Reverse dependency order.
@@ -250,18 +315,20 @@ if [[ "$DEPLOY_MODE" == "gitops" ]]; then
   export GITOPS_PROVIDER
   # The GitOps path must NOT kubectl-apply the casino directly — Argo CD owns it
   # so the edit->commit->sync lab mechanic stays intact (ISI-6796).
+  # NB (ISI-7628/#63): the bootstrap exit code only means "the sync was kicked
+  # off", NOT "the casino is healthy". The authoritative casino status is decided
+  # by the real-pod-health gate below; this block only logs / flags hard kicks.
+  CASINO_KICK_FAIL=""
   if bash "$REPO_ROOT/gitops/bootstrap/bootstrap-gitops.sh"; then
     ok "GitOps path up — Argo CD is syncing deploy/casino/k8s"
-    record casino ok "Argo CD synced (gitops)"
   else
-    warn "GitOps bootstrap reported errors"
-    record casino fail "bootstrap-gitops.sh non-zero"
+    warn "GitOps bootstrap reported errors — checking real casino pod health below"
   fi
 else
   # DEPLOY_MODE=direct — debug path, no Argo CD. Apply the manifests straight in.
+  CASINO_KICK_FAIL=""
   if [[ ! -d "$REPO_ROOT/deploy/casino/k8s" ]]; then
     warn "deploy/casino/k8s not present — casino manifests (ISI-6794) not on this branch yet"
-    record casino skip "casino manifests absent"
   else
     kubectl create namespace casino --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     # Resolve the ${IMAGE_OWNER}/${IMAGE_TAG} image placeholders (ISI-7587) before
@@ -275,20 +342,44 @@ else
       APPLY_DIR="$(mktemp -d)"
       # Fail CLOSED: if the render fails, do NOT fall back to the raw sources —
       # those still carry ${IMAGE_OWNER}/${IMAGE_TAG} and applying them is
-      # InvalidImageName (ISI-7617 review). Skip the apply and record a failure.
+      # InvalidImageName (ISI-7617 review). Skip the apply and flag a hard fail.
       SRC_DIR="$REPO_ROOT/deploy/casino/k8s" bash "$RENDER" -o "$APPLY_DIR" || RENDER_OK=0
     fi
     if [[ "$RENDER_OK" -ne 1 ]]; then
       warn "render-images.sh failed — refusing to apply unrendered placeholder manifests (InvalidImageName)"
-      record casino fail "render-images.sh non-zero"
+      CASINO_KICK_FAIL="render-images.sh non-zero"
     elif kubectl -n casino apply -f "$APPLY_DIR"; then
       ok "casino applied directly to namespace 'casino' (no GitOps)"
-      record casino ok "direct kubectl apply"
     else
-      warn "direct casino apply reported errors"
-      record casino fail "kubectl apply non-zero"
+      warn "direct casino apply reported errors — checking real casino pod health below"
     fi
   fi
+fi
+
+# --- Honest casino status (ISI-7628/#63) ------------------------------------
+# Base the casino M0 result on REAL pod health, not "the bootstrap script ran".
+# Fail fast on terminal image/crash states (surfacing the actual reason) instead
+# of blocking on a long rollout timeout and reporting a generic failure.
+if [[ -n "${CASINO_KICK_FAIL:-}" ]]; then
+  # A kick step provably failed (e.g. placeholder manifests never rendered) — no
+  # point polling; attribute it precisely and move on.
+  record casino fail "$CASINO_KICK_FAIL"
+elif ! kubectl get namespace casino >/dev/null 2>&1; then
+  warn "casino namespace not present — nothing was deployed"
+  record casino skip "casino not deployed (manifests absent)"
+else
+  CASINO_READY_TIMEOUT="${CASINO_READY_TIMEOUT:-180}"
+  log "verifying casino pod health (fail-fast, up to ${CASINO_READY_TIMEOUT}s)"
+  wait_ns_ready casino "$CASINO_READY_TIMEOUT"; rc=$?
+  case "$rc" in
+    0) ok "casino pods are Ready"
+       record casino ok "pods Ready (real health)" ;;
+    1) warn "casino has pods in a TERMINAL state — bring-up cannot succeed (reasons above)"
+       record casino fail "terminal pod state — see ImagePull/CrashLoop reason above" ;;
+    2) warn "casino did not reach Ready within ${CASINO_READY_TIMEOUT}s"
+       term="$(scan_terminal_pods casino)"; [[ -n "$term" ]] && echo "$term" >&2
+       record casino fail "pods not Ready within ${CASINO_READY_TIMEOUT}s" ;;
+  esac
 fi
 
 # ============================================================================

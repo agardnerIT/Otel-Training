@@ -5,7 +5,8 @@
 # missing or when FORCE=1. Versions are read from env vars so the same script is
 # used at image build time (Dockerfile) and for runtime self-heal (postStart).
 #
-# Tools: kubectl, helm, kind, argocd, yq, dtctl, opencode  (jq/git come from apt)
+# Tools: kubectl, helm, kind, argocd, yq, dtctl, opencode, otelcol-contrib
+#        (jq/git come from apt)
 set -euo pipefail
 
 # Default pinned to the kind node image (kind-config.yaml); "stable" still works
@@ -19,6 +20,12 @@ DTCTL_VERSION="${DTCTL_VERSION:-v0.45.0}"   # Dynatrace/dtctl GoReleaser tag; "l
 DTCTL_REPO="${DTCTL_REPO:-Dynatrace/dtctl}"  # was dynatrace-oss/dtctl — repo moved to the Dynatrace org
 OPENCODE_VERSION="${OPENCODE_VERSION:-v1.19.5}"  # sst/opencode release tag; "latest" resolves via API
 OPENCODE_REPO="${OPENCODE_REPO:-sst/opencode}"
+# otelcol-contrib — the Collector binary observability/validate.sh uses to
+# `otelcol validate` the collector configs offline. KEEP IN LOCKSTEP with
+# observability/versions.env (OTEL_COLLECTOR_VERSION). Baking it into the image
+# removes validate.sh's verify-time download, which hard-coded amd64 and had no
+# retry/checksum (ISI-7628/#66).
+OTEL_COLLECTOR_VERSION="${OTEL_COLLECTOR_VERSION:-0.164.0}"
 FORCE="${FORCE:-0}"
 
 BIN_DIR="${BIN_DIR:-/usr/local/bin}"
@@ -38,6 +45,38 @@ log() { echo "==> $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 # install <dest-name> <src-file>  -> move into BIN_DIR, chmod +x
 install_bin() { $SUDO install -m 0755 "$2" "${BIN_DIR}/$1"; }
+
+# fetch <url> <dest> — curl with a few retries + backoff (ISI-7628/#66). curl's
+# own --retry covers transient 5xx/connection resets; the outer loop covers the
+# rest. Returns non-zero after all attempts fail so callers can degrade.
+fetch() {
+  local url="$1" dest="$2" n
+  for n in 1 2 3; do
+    if curl -fsSL --retry 3 --retry-delay 2 -o "$dest" "$url"; then return 0; fi
+    echo "WARN: download attempt $n/3 failed: $url" >&2
+    sleep $((n * 2))
+  done
+  return 1
+}
+
+# verify_sha256 <sha256-url> <file> — confirm <file> matches the published
+# SHA256. <sha256-url> points at a file whose first field is the expected hash
+# (GoReleaser writes a bare-hash `<asset>.sha256` per asset; a `<hash>  <name>`
+# line also works — we take field 1). Best-effort: if sha256sum or the checksum
+# side file is unavailable we warn and pass (never block a bake on a missing side
+# file), but a real MISMATCH fails.
+verify_sha256() {
+  local url="$1" file="$2" want have
+  command -v sha256sum >/dev/null 2>&1 || { echo "WARN: sha256sum unavailable — skipping checksum" >&2; return 0; }
+  want="$(curl -fsSL "$url" 2>/dev/null | awk 'NF{print $1; exit}')"
+  [[ -z "$want" ]] && { echo "WARN: no checksum available at $url — skipping verification" >&2; return 0; }
+  have="$(sha256sum "$file" | awk '{print $1}')"
+  if [[ "$want" != "$have" ]]; then
+    echo "WARN: checksum MISMATCH (want $want, got $have)" >&2
+    return 1
+  fi
+  return 0
+}
 
 install_kubectl() {
   if have kubectl && [[ "$FORCE" != "1" ]]; then log "kubectl present: $(kubectl version --client -o yaml 2>/dev/null | grep -m1 gitVersion || true)"; return; fi
@@ -172,6 +211,39 @@ install_opencode() {
   log "opencode installed: $(opencode --version 2>/dev/null || echo 'installed (version check deferred)')"
 }
 
+# otelcol-contrib — the OpenTelemetry Collector (contrib distro) used by
+# observability/validate.sh to validate the collector configs offline. Released
+# by GoReleaser as per-OS/arch tarballs
+# (otelcol-contrib_<ver>_<os>_<arch>.tar.gz) under the GitHub tag v<ver>, each
+# with a sibling otelcol-contrib_<ver>_checksums.txt. Baking it into the image
+# means validate.sh no longer downloads it at verify time; arch-aware via the
+# same $OS/$ARCH the other installers use, and download failures are non-fatal —
+# validate.sh keeps a hardened runtime-download fallback (ISI-7628/#66).
+install_otelcol() {
+  if have otelcol-contrib && [[ "$FORCE" != "1" ]]; then log "otelcol-contrib present: $(otelcol-contrib --version 2>/dev/null | head -n1 || echo unknown)"; return; fi
+  local ver="${OTEL_COLLECTOR_VERSION#v}"
+  local base="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${ver}"
+  local asset="otelcol-contrib_${ver}_${OS}_${ARCH}.tar.gz"
+  log "installing otelcol-contrib ${ver} (${OS}/${ARCH})"
+  if ! fetch "${base}/${asset}" /tmp/otelcol.tgz; then
+    echo "WARN: could not download ${asset} — validate.sh will fall back to a runtime download." >&2
+    rm -f /tmp/otelcol.tgz
+    return
+  fi
+  if ! verify_sha256 "${base}/${asset}.sha256" /tmp/otelcol.tgz; then
+    echo "WARN: otelcol-contrib checksum verification failed — not installing." >&2
+    rm -f /tmp/otelcol.tgz
+    return
+  fi
+  local tmpd; tmpd="$(mktemp -d)"
+  tar xzf /tmp/otelcol.tgz -C "$tmpd" otelcol-contrib 2>/dev/null || tar xzf /tmp/otelcol.tgz -C "$tmpd"
+  local bin; bin="$(find "$tmpd" -type f -name otelcol-contrib | head -n1)"
+  [[ -z "$bin" ]] && { echo "WARN: otelcol-contrib binary not found inside archive" >&2; rm -rf "$tmpd" /tmp/otelcol.tgz; return; }
+  install_bin otelcol-contrib "$bin"
+  rm -rf "$tmpd" /tmp/otelcol.tgz
+  log "otelcol-contrib installed: $(otelcol-contrib --version 2>/dev/null | head -n1 || echo 'installed (version check deferred)')"
+}
+
 main() {
   install_kubectl
   install_helm
@@ -180,6 +252,7 @@ main() {
   install_yq
   install_dtctl
   install_opencode
+  install_otelcol
   log "toolchain install complete"
 }
 main "$@"
