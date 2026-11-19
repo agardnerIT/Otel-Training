@@ -1,11 +1,11 @@
-# Catalog B6 — Metric temporality with `cumulativetodelta`
+# Catalog B6 — Metric temporality with `cumulative_to_delta`
 
 **Theme B (metrics/collector) · [20m][med] · Skill: `otel-collector`**
 
 Reference asset for the catalog exercise
 [Catalog B6 — Metric temporality](../../docs-site/advanced/catalog-b6-cumulativetodelta.md).
 The attendee drives `opencode` (`otel-collector` skill) to make the gateway's
-`cumulativetodelta` processor **explicit and targeted** in
+`cumulative_to_delta` processor **explicit and targeted** in
 `observability/collectors/gateway.yaml`; `cumulativetodelta-processor.yaml` is the
 target delta and the review reference.
 
@@ -24,12 +24,12 @@ error-budget burn come straight from `sum()`, with no restart artefacts.
 
 ## What changes (and why it is not a no-op)
 
-The baseline gateway already has `cumulativetodelta: {}` — but **empty**. Empty
+The baseline gateway already has `cumulative_to_delta: {}` — but **empty**. Empty
 means it converts **every** cumulative sum indiscriminately and holds delta state
 forever. This exercise replaces `{}` with an **explicit, targeted** config:
 
 ```yaml
-cumulativetodelta:
+cumulative_to_delta:
   include:
     metrics: [casino.bets.count, casino.payout.total]
     match_type: strict
@@ -50,11 +50,11 @@ The processor position is **unchanged** — only its body changes from `{}` to t
 explicit config:
 
 ```
-memory_limiter -> k8sattributes -> cumulativetodelta -> batch
+memory_limiter -> k8sattributes -> cumulative_to_delta -> batch
 ```
 
 - `memory_limiter` stays **first**; `batch` stays **last**.
-- `cumulativetodelta` supports the **metrics** signal only — it lives on the
+- `cumulative_to_delta` supports the **metrics** signal only — it lives on the
   metrics pipeline alone (adding it to traces/logs fails validation).
 
 ## Verify (Dynatrace, Grail)

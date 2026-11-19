@@ -131,7 +131,7 @@ Wire both sides — traces export into it, metrics read from it:
           exporters: [otlp_http/dynatrace, spanmetrics]
         metrics:
           receivers: [otlp, spanmetrics]
-          processors: [memory_limiter, k8sattributes, transform/drop_player_id, cumulativetodelta]
+          processors: [memory_limiter, k8sattributes, transform/drop_player_id, cumulative_to_delta]
           exporters: [otlp_http/dynatrace]
 ```
 

@@ -1,7 +1,7 @@
 # Catalog B6 — convert cumulative counters to delta temporality.
 #
 # Delta to merge into observability/collectors/gateway.yaml. The baseline gateway
-# already carries `cumulativetodelta: {}` on the metrics pipeline — but EMPTY, so
+# already carries `cumulative_to_delta: {}` on the metrics pipeline — but EMPTY, so
 # it converts EVERY cumulative sum indiscriminately and keeps delta state forever.
 # This exercise replaces that with an EXPLICIT, targeted config: convert only the
 # monotonic casino counters, bound the state with max_staleness, and understand
@@ -18,12 +18,12 @@
 #
 # Placement keeps the pipeline invariants intact (the position is UNCHANGED from
 # the baseline, only the config body changes) —
-#   memory_limiter -> k8sattributes -> cumulativetodelta -> batch
+#   memory_limiter -> k8sattributes -> cumulative_to_delta -> batch
 # memory_limiter stays FIRST and batch stays LAST. The processor only supports the
 # METRICS signal, so it lives on the metrics pipeline alone.
 
 processors:
-  cumulativetodelta:
+  cumulative_to_delta:
     # Convert ONLY the monotonic casino counters. Leave gauges and any sum that is
     # genuinely meaningful as a running total alone — converting a gauge is wrong,
     # and converting a non-monotonic sum can produce negative deltas.
@@ -41,12 +41,12 @@ processors:
     # subsequent points emit the delta. keep | drop change first-point handling.
     initial_value: auto
 
-# The metrics pipeline position is unchanged — cumulativetodelta stays between
+# The metrics pipeline position is unchanged — cumulative_to_delta stays between
 # k8sattributes and batch. (Only the processor body changed from `{}` to the
 # explicit config above.)
 service:
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, k8sattributes, cumulativetodelta, batch]
+      processors: [memory_limiter, k8sattributes, cumulative_to_delta, batch]
       exporters: [otlp_http/dynatrace]

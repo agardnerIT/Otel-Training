@@ -147,7 +147,7 @@ fetch logs, from: now() - 30m
 
 ---
 
-## Catalog B6 — Metric temporality (`cumulativetodelta`)
+## Catalog B6 — Metric temporality (`cumulative_to_delta`)
 
 ```dql
 timeseries bets = sum(casino.bets.count), from: now() - 1h, interval: 1m
