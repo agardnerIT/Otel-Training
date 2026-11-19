@@ -71,6 +71,15 @@ SKILLS=(
 # opencode's primary GLOBAL skills directory (overridable for tests/mirrors).
 OPENCODE_SKILLS_DIR="${OPENCODE_SKILLS_DIR:-$HOME/.config/opencode/skills}"
 
+# Cross-client coverage (ISI-7655/ISI-7633-C): also install into ~/.claude/skills
+# so Claude Code loads these same skills — the board wants the Dynatrace/OTel
+# tooling available in BOTH terminal agents, not just opencode. opencode's own
+# discovery precedence already includes ~/.claude/skills, so writing there is
+# additive for opencode and makes the skills visible to Claude Code too. The
+# primary dir (above) stays authoritative for the pin lock + verify output.
+# Override with a space-separated OPENCODE_SKILLS_DIRS to narrow/redirect.
+read -r -a OPENCODE_SKILLS_DIRS <<< "${OPENCODE_SKILLS_DIRS:-$OPENCODE_SKILLS_DIR $HOME/.claude/skills}"
+
 # Resolve a per-repo override env var name, e.g.
 #   Dynatrace/dynatrace-for-ai  ->  DYNATRACE_DYNATRACE_FOR_AI  (+_TARBALL_URL / _SRC_DIR)
 override_var_name() {
@@ -137,14 +146,18 @@ install_one() {
     return 1
   fi
 
-  # 3. Copy each skill dir (those containing SKILL.md) into the opencode dir.
-  mkdir -p "$OPENCODE_SKILLS_DIR"
+  # 3. Copy each skill dir (those containing SKILL.md) into EVERY target dir
+  #    (opencode primary + ~/.claude/skills) for cross-client coverage.
+  local td
+  for td in "${OPENCODE_SKILLS_DIRS[@]}"; do mkdir -p "$td"; done
   local copied=0 skdir skname
   while IFS= read -r skdir; do
     skname="$(basename "$skdir")"
-    rm -rf "${OPENCODE_SKILLS_DIR:?}/$skname"      # idempotent replace
-    cp -r "$skdir" "$OPENCODE_SKILLS_DIR/$skname"
-    printf '%s\n' "${repo}@${ref}" > "$OPENCODE_SKILLS_DIR/$skname/.installed-from"
+    for td in "${OPENCODE_SKILLS_DIRS[@]}"; do
+      rm -rf "${td:?}/$skname"                      # idempotent replace
+      cp -r "$skdir" "$td/$skname"
+      printf '%s\n' "${repo}@${ref}" > "$td/$skname/.installed-from"
+    done
     copied=$((copied + 1))
   done < <(find "$skills_root" -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/SKILL.md' ';' -print)
 
@@ -159,7 +172,7 @@ install_one() {
   printf '%s\t%d skills\n' "${repo}@${ref}" "$copied" >> "$lock.tmp"
   mv "$lock.tmp" "$lock"
 
-  log "installed ${copied} skill(s) from ${repo}@${ref} into ${OPENCODE_SKILLS_DIR}"
+  log "installed ${copied} skill(s) from ${repo}@${ref} into ${OPENCODE_SKILLS_DIRS[*]}"
   return 0
 }
 
@@ -171,7 +184,7 @@ main() {
   if [[ "$rc" -ne 0 ]]; then
     warn "one or more skill installs did not complete (see above) — non-fatal."
   fi
-  log "done (target: ${OPENCODE_SKILLS_DIR})"
+  log "done (targets: ${OPENCODE_SKILLS_DIRS[*]})"
   # Always exit 0: skill install must never block the codespace from opening.
   # verify-opencode-skills.sh is the gate that fails loudly when a skill is absent.
   exit 0
