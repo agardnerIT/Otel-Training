@@ -142,7 +142,7 @@ mkdir -p "$WORK/k8s"
 # raw copy only if the renderer is absent (older placeholder-free manifests).
 RENDER="$REPO_ROOT/deploy/casino/render-images.sh"
 if [[ -f "$RENDER" ]]; then
-  log "rendering image owner/tag (IMAGE_OWNER=${IMAGE_OWNER:-henrikrexed} IMAGE_TAG=${IMAGE_TAG:-latest})"
+  log "rendering image owner/tag (IMAGE_OWNER=${IMAGE_OWNER:-henrikrexed} IMAGE_TAG=${IMAGE_TAG:-$(tr -d '[:space:]' < "$REPO_ROOT/deploy/casino/IMAGE_VERSION" 2>/dev/null || echo latest)})"
   SRC_DIR="$CASINO_MANIFESTS_DIR" bash "$RENDER" -o "$WORK/k8s"
 else
   warn "render-images.sh not found — copying manifests verbatim (image placeholders will NOT be resolved)"
