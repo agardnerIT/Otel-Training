@@ -19,6 +19,9 @@ to build:
 | [A5 — Baggage propagation (`player.tier`)](catalog-a5-baggage-propagation.md) | traces | **25m** | **med** | `otel-instrumentation` | Set `player.tier` into baggage upstream in slots and read it downstream in scoring, so one DQL slices by a tier scoring never looked up. |
 | [B1 — RED metrics from spans](catalog-b1-spanmetrics.md) | metrics / collector | **20m** | **med** | `otel-collector` | Add the `spanmetrics` connector to the gateway and chart Rate / Errors / Duration — no app-code change. |
 | [B3 — Drop noise (filter processor)](catalog-b3-filter-drop-noise.md) | metrics / collector | **15m** | **easy** | `otel-collector` | Drop health-check / `/metrics` spans at the gateway — verify the ingest drop with no signal loss. |
+| [B4 — OTTL enrichment (`casino.bet.tier`)](catalog-b4-ottl-enrichment.md) | metrics / collector | **20m** | **med** | `otel-collector` + `otel-ottl` | Derive a bounded bet-tier bucket from the raw bet amount with a `transform` processor — bucket a high-cardinality number so you can slice by it. |
+| [B5 — Structure unstructured logs (OTTL)](catalog-b5-ottl-log-structuring.md) | metrics / collector | **25m** | **med** | `otel-collector` + `otel-ottl` | Parse opaque casino log lines into typed `casino.*` attributes + severity with OTTL `ExtractPatterns` — make text queryable. |
+| [B6 — Metric temporality (`cumulativetodelta`)](catalog-b6-cumulativetodelta.md) | metrics / collector | **20m** | **med** | `otel-collector` | Make the gateway's `cumulativetodelta` explicit + targeted; learn cumulative vs delta and why Dynatrace prefers delta for rate / SLO math. |
 | [C1 — Build a dashboard via dtctl](catalog-c1-dtctl-dashboard.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Turn your Step-2 business metrics into a live, version-controlled Dynatrace dashboard — as code. |
 
 !!! tip "Prerequisites"
