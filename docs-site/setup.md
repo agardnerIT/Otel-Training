@@ -231,18 +231,60 @@ bash gitops/bootstrap/bootstrap-gitops.sh
     ```
 
 2. Sign in with the credentials from your handout.
-3. Press **Ctrl/Cmd+K**, search "Kubernetes", and open **Clusters**. Confirm a
-   cluster named after your `PARTICIPANT_ID` appears (first appearance can take a
-   few minutes).
-4. Press **Ctrl/Cmd+K**, search "Distributed Tracing", and open the **Distributed
-   Tracing** app. You should see a trickle of traces from the
-   casino already — the k6 load generator is playing the casino for you. The
-   traces will look *broken*. That is intentional; it is Module 1's job.
+3. Press **Ctrl/Cmd+K**, search "Notebooks", and open **Notebooks**. Create a new
+   notebook and add a **DQL** section — this is the query surface you will read
+   all your telemetry from today, instead of clicking through curated UI views.
 
-!!! tip "Filter by your cluster"
-    In most Dynatrace views you can add a filter `k8s.cluster.name` =
-    your `PARTICIPANT_ID`. Set it once, save the view — you will use it all
-    day.
+!!! abstract "The one scoping rule — filter by your cluster, every time"
+    Everyone shares one Dynatrace tenant, so **every M0–M1 query opens with your
+    own cluster filter** — that is how you see your casino and not your
+    neighbor's. Thanks to `PARTICIPANT_ID`, your telemetry carries
+    `k8s.cluster.name == "<PARTICIPANT_ID>"` on every span, metric, and log.
+
+    Throughout M0–M1, replace `<PARTICIPANT_ID>` with your actual value (run
+    `echo $PARTICIPANT_ID` once) and keep this as the **first `filter` line** of
+    every query:
+
+    ```dql
+    | filter k8s.cluster.name == "<PARTICIPANT_ID>"
+    ```
+
+4. **Confirm your telemetry is arriving — and that it is yours.** Paste this into
+   the DQL section and run it. It lists every service sending spans *from your
+   cluster* in the last 30 minutes:
+
+    ```dql
+    fetch spans, from: now() - 30m
+    | filter k8s.cluster.name == "<PARTICIPANT_ID>"
+    | summarize spans = count(), by: { service.name }
+    | sort spans desc
+    ```
+
+    **What you should see:** your casino services — `vegas-frontend-service`,
+    `vegas-slots-service`, `vegas-scoring-service`, and the other games — each
+    with a nonzero count. The k6 load generator is already playing the casino for
+    you, so traces flow without you touching the UI. (First telemetry can take a
+    couple of minutes to land.)
+
+5. **Prove the scope isolates you.** Drop the cluster filter for a moment and
+   count the distinct clusters on the tenant — you will see everyone's:
+
+    ```dql
+    fetch spans, from: now() - 30m
+    | summarize spans = count(), by: { k8s.cluster.name }
+    | sort spans desc
+    ```
+
+    Your `PARTICIPANT_ID` is one row among many. That is exactly why the cluster
+    filter is the first line of every query from here on.
+
+!!! note "Running DQL needs Grail read access"
+    Notebook queries run as **you** (your signed-in session), not via a token — so
+    the whole M0–M5 path needs no `DT_PLATFORM_TOKEN`. They do need Grail **read**
+    scopes (`storage:spans:read`, `storage:logs:read`, …) bound to your user; on a
+    shared training tenant the facilitator grants these for you. (The optional
+    `dtctl` catalog labs are the only ones that also need `DT_PLATFORM_TOKEN` —
+    see [`DT_PLATFORM_TOKEN`](#dt_platform_token-scopes-user-permissions-and-whether-you-need-it).)
 
 ## 4. Open the GitOps loop
 
@@ -330,7 +372,7 @@ the gateway log.
 
 - [ ] `kubectl get nodes` shows one Ready node
 - [ ] All pods Running in `casino`, `observability`, `dynatrace`, `gitea`, `argocd`
-- [ ] Your cluster appears under **Ctrl/Cmd+K → Kubernetes → Clusters** in Dynatrace
+- [ ] The scoped `fetch spans | filter k8s.cluster.name == "<PARTICIPANT_ID>"` query returns your casino services in Dynatrace
 - [ ] Gitea reachable at http://localhost:30001, repo `casino/casino` visible
 - [ ] Casino UI reachable at http://localhost:30000 and you played a round
 - [ ] `otel-gateway` log shows no export errors

@@ -18,8 +18,8 @@
 #
 # Placement keeps the pipeline invariants intact (the position is UNCHANGED from
 # the baseline, only the config body changes) —
-#   memory_limiter -> k8sattributes -> cumulative_to_delta -> batch
-# memory_limiter stays FIRST and batch stays LAST. The processor only supports the
+#   memory_limiter -> k8sattributes -> cumulative_to_delta -> otlp_http/dynatrace (exporter batching)
+# memory_limiter stays FIRST; there is NO batch processor (batching is on the exporter via sending_queue.batch). The processor only supports the
 # METRICS signal, so it lives on the metrics pipeline alone.
 
 processors:
@@ -41,12 +41,12 @@ processors:
     # subsequent points emit the delta. keep | drop change first-point handling.
     initial_value: auto
 
-# The metrics pipeline position is unchanged — cumulative_to_delta stays between
-# k8sattributes and batch. (Only the processor body changed from `{}` to the
+# The metrics pipeline position is unchanged — cumulative_to_delta stays
+# right after k8sattributes. (Only the processor body changed from `{}` to the
 # explicit config above.)
 service:
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, k8sattributes, cumulative_to_delta, batch]
+      processors: [memory_limiter, k8sattributes, cumulative_to_delta]
       exporters: [otlp_http/dynatrace]

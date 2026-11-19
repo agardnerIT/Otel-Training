@@ -13,8 +13,8 @@
 # is the lesson: every service's logs get structured in one place, no app change.
 #
 # Placement keeps the pipeline invariants intact —
-#   memory_limiter -> k8sattributes -> transform/structure_logs -> batch
-# memory_limiter stays FIRST and batch stays LAST. Only the LOGS pipeline changes;
+#   memory_limiter -> k8sattributes -> transform/structure_logs -> otlp_http/dynatrace (exporter batching)
+# memory_limiter stays FIRST; there is NO batch processor (batching is on the exporter via sending_queue.batch). Only the LOGS pipeline changes;
 # traces and metrics are untouched.
 
 processors:
@@ -57,11 +57,11 @@ processors:
           - delete_key(attributes, "outcome")
           - delete_key(attributes, "payout")
 
-# Wire the transform onto the logs pipeline between k8sattributes and batch.
+# Wire the transform onto the logs pipeline, last — right after k8sattributes.
 # (Only the logs pipeline changes; traces/metrics are untouched.)
 service:
   pipelines:
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, k8sattributes, transform/structure_logs, batch]
+      processors: [memory_limiter, k8sattributes, transform/structure_logs]
       exporters: [otlp_http/dynatrace]

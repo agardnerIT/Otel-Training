@@ -207,6 +207,35 @@ published (if not, it changes nothing and tells you the Actions run hasn't
 finished), wires the `ghcr-pull` secret for private fork images, re-seeds Gitea
 with `IMAGE_OWNER=<you>`, and nudges Argo CD to sync. Re-running with no new build
 is a no-op. On the direct (no-Argo) debug path, run it with `DEPLOY_MODE=direct`.
+## Image source — GHCR (default) or the Gitea registry alias (ISI-7640 / WS-C)
+
+The same renderer also switches the **registry** the 7 casino-built `vegasapp-*`
+images resolve to, so a fully in-cluster, GHCR-free deploy is one env var away.
+It stays plain-text sed — **no kustomize** — so the GHCR default render is
+byte-for-byte unchanged (D1) and the Gitea flip is purely additive:
+
+```bash
+# Default (D1): GHCR — nothing changes, existing deploys keep pulling from ghcr.io
+bash deploy/casino/render-images.sh -o /tmp/casino-rendered
+
+# Flip all 7 services to the in-cluster Gitea container registry alias (ISI-7638):
+IMAGE_SOURCE=gitea bash deploy/casino/render-images.sh -o /tmp/casino-rendered
+#   -> gitea.local:30001/casino/vegasapp-<svc>:<tag>
+```
+
+`IMAGE_SOURCE` flows through the environment, so the same flip works on the
+seed/deploy path (`gitops/install/seed-gitea.sh`, `deploy-environment.sh`) by
+exporting `IMAGE_SOURCE=gitea` — no code change at the call sites. The alias and
+namespace are overridable via `GITEA_REGISTRY` (default `gitea.local:30001`, the
+WS-D contract) and `GITEA_OWNER` (default `casino`, the `CASINO_ORG` seeded repo
+owner). Infra images (postgres, redis, curl) and the upstream `grafana/k6`
+loadgen are not casino-built and are left on their public upstreams in **both**
+modes.
+
+**No `imagePullSecret` for Gitea (D3).** Gitea container packages are made
+public (anonymous pull), so `gitea.local:30001` refs pull without a secret. The
+`ghcr-pull` secret on the `vegas-casino` ServiceAccount is a GHCR credential; it
+is simply never matched against `gitea.local` refs, so it is inert in Gitea mode.
 
 ## Image pulls — baseline public + fork pull secret
 

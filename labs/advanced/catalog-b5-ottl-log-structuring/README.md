@@ -46,14 +46,14 @@ The mechanism is three OTTL idioms:
 
 ## The invariant (the whole lesson)
 
-The transform is inserted **between `k8sattributes` and `batch`** on the **logs**
-pipeline:
+The transform is inserted **last — right after `k8sattributes`** on the **logs**
+pipeline (this gateway batches at the exporter, so there is no `batch` processor):
 
 ```
-memory_limiter -> k8sattributes -> transform/structure_logs -> batch
+memory_limiter -> k8sattributes -> transform/structure_logs   (exporter batching)
 ```
 
-- `memory_limiter` stays **first**; `batch` stays **last**.
+- `memory_limiter` stays **first**; there is **no `batch` processor** (batching is on the exporter).
 - Only the **logs** pipeline changes; traces and metrics are untouched.
 - `error_mode: ignore` + the `IsMatch(body, "game=…")` guard means a line that is
   **not** a casino spin record (JSON, a startup banner, a stack trace) does not
