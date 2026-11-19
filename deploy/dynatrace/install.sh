@@ -49,6 +49,52 @@ log()  { echo "==> $*"; }
 err()  { echo "ERROR: $*" >&2; }
 need() { command -v "$1" >/dev/null 2>&1 || { err "'$1' not found on PATH"; exit 1; }; }
 
+# assert_platform_operator_token — fail-fast on a CLASSIC (dt0c01) operator token.
+# ISI-7673: a classic token gets the operator far enough to resolve the tenant
+# registry HOST (it still auths the API during migration), but the ActiveGate
+# IMAGE pull from `<env>.live.dynatrace.com/linux/activegate:...-raw` needs the
+# platform-token IAM scope `fleet-management:container-images:read`, which a
+# classic `dt0c01` token cannot carry. The registry then returns a bare 404
+# (NotFound) to the unauthorized pull -> Init:ImagePullBackOff with a cryptic
+# "not found" that looks like a missing arch/tag rather than a token problem.
+# Reject it here with the exact platform-token recipe instead of letting the
+# attendee hit that 404 twenty minutes later. Platform tokens (dt0s16) pass.
+assert_platform_operator_token() {
+  local tok="${1:-}"
+  case "$tok" in
+    dt0c01.*)
+      err "DT_OPERATOR_TOKEN is a CLASSIC access token (dt0c01.…)."
+      err "This tenant serves the ActiveGate image only to a PLATFORM token (dt0s16)."
+      err "A classic token cannot carry 'fleet-management:container-images:read', so the"
+      err "operator cannot mint a registry pull-secret that can pull"
+      err "  <env>.live.dynatrace.com/linux/activegate:<ver>-raw"
+      err "-> the tenant registry returns 404 (NotFound) -> ActiveGate Init:ImagePullBackOff."
+      err ""
+      err "Fix: mint a PLATFORM token (dt0s16) with these 3 required scopes —"
+      err "  fleet-management:activegate.connection-info:read"
+      err "  fleet-management:activegate.tokens:create"
+      err "  fleet-management:container-images:read"
+      err "Account Management -> Identity & access management -> Platform tokens."
+      err "(See deploy/dynatrace/README.md 'Token scopes' for the full set.)"
+      err "Then set DT_OPERATOR_TOKEN to the new dt0s16 token and re-run install.sh."
+      exit 1
+      ;;
+    dt0s16.*)
+      log "operator token type: platform (dt0s16) — OK"
+      ;;
+    "")
+      : # empty handled by the required-var check below
+      ;;
+    *)
+      # Unknown/future prefix: don't hard-fail (avoid false negatives), but warn
+      # so a misconfigured token is still visible before the AG pull is attempted.
+      log "note: DT_OPERATOR_TOKEN prefix is not the expected dt0s16 (platform) —"
+      log "      if the ActiveGate fails to pull its image, confirm it is a platform"
+      log "      token with 'fleet-management:container-images:read'."
+      ;;
+  esac
+}
+
 need kubectl
 need helm
 
@@ -65,6 +111,10 @@ DT_OPERATOR_TOKEN="${DT_OPERATOR_TOKEN:-${DT_API_TOKEN:-}}"
 : "${DT_TENANT:?set DT_TENANT to your tenant URL, e.g. https://abc12345.live.dynatrace.com}"
 : "${DT_OPERATOR_TOKEN:?set DT_OPERATOR_TOKEN (operator/ActiveGate API token — see README token scopes)}"
 : "${DT_INGEST_TOKEN:?set DT_INGEST_TOKEN (data-ingest token)}"
+
+# Fail-fast: reject a classic (dt0c01) operator token BEFORE touching the cluster,
+# so the AG registry 404 never happens (ISI-7673). dt0s16 platform tokens pass.
+assert_platform_operator_token "$DT_OPERATOR_TOKEN"
 
 # Normalise apiUrl: strip trailing slash, ensure it ends with /api.
 _tenant="${DT_TENANT%/}"
@@ -149,8 +199,32 @@ ag_diag() {
   kubectl -n "$DT_NAMESPACE" get statefulset "$AG_STS" \
     -o jsonpath='  init : {.spec.template.spec.initContainers[*].image}{"\n"}  main : {.spec.template.spec.containers[*].image}{"\n"}' 2>/dev/null >&2 || true
   echo "[pod] ${AG_STS}-0 init-container waiting reason/message (the pull error):" >&2
-  kubectl -n "$DT_NAMESPACE" get pod "${AG_STS}-0" \
-    -o jsonpath='{range .status.initContainerStatuses[*]}  {.name}: {.state.waiting.reason} — {.state.waiting.message}{"\n"}{end}' 2>/dev/null >&2 || true
+  local wait_msg
+  wait_msg=$(kubectl -n "$DT_NAMESPACE" get pod "${AG_STS}-0" \
+    -o jsonpath='{range .status.initContainerStatuses[*]}{.name}: {.state.waiting.reason} — {.state.waiting.message}{"\n"}{end}' 2>/dev/null || true)
+  echo "$wait_msg" | sed 's/^/  /' >&2
+  # ISI-7673: classify a NotFound/404 pull error. The Dynatrace TENANT registry
+  # (*.dynatracelabs.com / *.live.dynatrace.com) answers an UNAUTHORIZED pull
+  # with a bare 404 (NotFound / "not found" / "manifest unknown"), NOT a 401/403.
+  # So a 404 whose image host is a tenant registry is almost always a token-scope
+  # problem (classic token, or a platform token missing container-images:read) —
+  # distinct from a genuine manifest-arch NotFound (wrong tag for this arch),
+  # which usually targets a PUBLIC registry (public.ecr.aws / docker.io) instead.
+  if echo "$wait_msg" | grep -qiE 'not ?found|manifest unknown|404'; then
+    if echo "$wait_msg" | grep -qiE 'dynatracelabs\.com|live\.dynatrace\.com'; then
+      echo "  >>> DIAGNOSIS: 404 (NotFound) pulling the ActiveGate image from the TENANT" >&2
+      echo "      registry. The tenant returns 404 to an UNAUTHORIZED pull — the operator" >&2
+      echo "      token is likely CLASSIC (dt0c01) or a platform token MISSING" >&2
+      echo "      'fleet-management:container-images:read'. Set DT_OPERATOR_TOKEN to a" >&2
+      echo "      dt0s16 platform token with that scope (install.sh now rejects dt0c01" >&2
+      echo "      up front). NOTE: this is NOT a manifest-arch miss — those 404 on a" >&2
+      echo "      public registry (public.ecr.aws/docker.io); capture 'uname -m' for those." >&2
+    else
+      echo "  >>> DIAGNOSIS: NotFound on a non-tenant registry host — likely a genuine" >&2
+      echo "      manifest/arch miss (image tag not published for this arch). Capture" >&2
+      echo "      'uname -m' and confirm the tag exists for that platform." >&2
+    fi
+  fi
   echo "[events] last 15 in $DT_NAMESPACE:" >&2
   kubectl -n "$DT_NAMESPACE" get events --sort-by=.lastTimestamp 2>/dev/null | tail -15 >&2 || true
   echo "-----------------------------------------------------------------------" >&2
@@ -178,7 +252,13 @@ kubectl -n "$DT_NAMESPACE" rollout status statefulset "$AG_STS" --timeout=240s |
   err "                           tenant-registry pull-secret. Fix the DT_OPERATOR_TOKEN scopes"
   err "                           (fleet-management:activegate.tokens:create + connection-info:read)"
   err "                           — see deploy/dynatrace/README.md token scopes."
-  err "  * manifest-not-found     -> AG image tag missing for this arch; capture 'uname -m'."
+  err "  * 404 / NotFound on a     -> operator token is CLASSIC (dt0c01) or a platform token"
+  err "    *.dynatracelabs.com /       missing 'fleet-management:container-images:read'. The tenant"
+  err "    *.live.dynatrace.com        registry 404s an unauthorized pull. Use a dt0s16 platform"
+  err "    tenant-registry host        token with the 3 required scopes (install.sh now rejects"
+  err "                                dt0c01 up front) — see README token scopes. (ISI-7673)"
+  err "  * manifest-not-found on   -> AG image tag missing for this arch; capture 'uname -m'."
+  err "    a PUBLIC registry"
   err "  * timeout / dial error   -> egress to the tenant registry blocked."
   err "  * transient (old pod)     -> 'kubectl -n $DT_NAMESPACE rollout restart statefulset $AG_STS' + re-run."
   err "If it persists, paste this whole diagnostic block to ISI-7565."

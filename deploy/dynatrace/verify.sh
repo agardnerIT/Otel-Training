@@ -59,6 +59,37 @@ else
   exit 2
 fi
 
+# Operator-token type (ISI-7673). A classic (dt0c01) operator token cannot carry
+# 'fleet-management:container-images:read', so the ActiveGate image pull from the
+# tenant registry 404s -> Init:ImagePullBackOff. Mirror install.sh's fail-fast so
+# verify.sh flags an out-of-contract token even when the env is otherwise set.
+# DT_OPERATOR_TOKEN is canonical; DT_API_TOKEN is the deprecated fallback name.
+_op_tok="${DT_OPERATOR_TOKEN:-${DT_API_TOKEN:-}}"
+case "$_op_tok" in
+  dt0c01.*)
+    fail "operator token is CLASSIC (dt0c01) — the tenant serves the ActiveGate image"
+    info "only to a PLATFORM token (dt0s16). A classic token cannot carry"
+    info "'fleet-management:container-images:read' -> AG image pull 404s -> ImagePullBackOff."
+    info "Mint a dt0s16 platform token with the 3 required scopes:"
+    info "  fleet-management:activegate.connection-info:read"
+    info "  fleet-management:activegate.tokens:create"
+    info "  fleet-management:container-images:read"
+    info "Account Management -> Identity & access management -> Platform tokens."
+    info "(See deploy/dynatrace/README.md token scopes.) Set DT_OPERATOR_TOKEN + re-run install.sh."
+    ;;
+  dt0s16.*)
+    pass "operator token is a platform token (dt0s16)"
+    ;;
+  "")
+    info "DT_OPERATOR_TOKEN not set in this shell — cannot assert token type (it is only"
+    info "needed by install.sh, which read it from env). Skipping token-type check."
+    ;;
+  *)
+    info "DT_OPERATOR_TOKEN prefix is neither dt0s16 nor dt0c01 — if the ActiveGate fails"
+    info "to pull its image, confirm it is a platform token with container-images:read."
+    ;;
+esac
+
 # --- Step 2 (AC): operator / webhook / activegate pods all Running ----------
 hdr "Step 2 — pods Running"
 kubectl -n "$DT_NAMESPACE" get pods -o wide 2>&1 | tee -a "$EVIDENCE"
