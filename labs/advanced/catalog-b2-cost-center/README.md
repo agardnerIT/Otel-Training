@@ -50,7 +50,7 @@ The transform is inserted **right after `k8sattributes`** on **every** pipeline:
 
 ```
 traces:  memory_limiter -> k8sattributes -> transform/costcenter
-metrics: memory_limiter -> k8sattributes -> transform/costcenter -> cumulativetodelta
+metrics: memory_limiter -> k8sattributes -> transform/costcenter -> cumulative_to_delta
 logs:    memory_limiter -> k8sattributes -> transform/costcenter
 ```
 

@@ -74,7 +74,7 @@ processors:
 service:
   pipelines:
     traces:  { processors: [memory_limiter, k8sattributes, transform/costcenter] }
-    metrics: { processors: [memory_limiter, k8sattributes, transform/costcenter, cumulativetodelta] }
+    metrics: { processors: [memory_limiter, k8sattributes, transform/costcenter, cumulative_to_delta] }
     logs:    { processors: [memory_limiter, k8sattributes, transform/costcenter] }
 ```
 
@@ -124,7 +124,7 @@ Climb one rung at a time. Read what the agent did before you let it continue.
     **What you should see:** one `transform/costcenter` block reused across all three
     pipelines via a YAML anchor, each wired after `k8sattributes`.
     **Review check:** it stamps `dt.cost.costcenter` (the Dynatrace contract), not a
-    bare `cost_center`; `memory_limiter` first; metrics keeps `cumulativetodelta` last.
+    bare `cost_center`; `memory_limiter` first; metrics keeps `cumulative_to_delta` last.
 
 === "P3 · Deepen — default-first + a team refinement"
 
@@ -216,7 +216,7 @@ fetch spans, from: now() - 30m
 
 - [ ] `transform/costcenter` derives `dt.cost.costcenter` / `dt.cost.product` from `k8s.namespace.name` / `service.name`
 - [ ] Attached to **traces, metrics and logs**, each **after `k8sattributes`**
-- [ ] Invariants hold (`memory_limiter` first; exporter-level batching still last; metrics keeps `cumulativetodelta`)
+- [ ] Invariants hold (`memory_limiter` first; exporter-level batching still last; metrics keeps `cumulative_to_delta`)
 - [ ] Cost-center DQL returns several buckets on spans **and** logs
 - [ ] `unallocated_pct` is a thin remainder, not the bulk of ingest
 

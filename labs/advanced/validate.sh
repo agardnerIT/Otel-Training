@@ -5,7 +5,7 @@
 #    otelcol-contrib if needed, same as observability/validate.sh).
 # 2. Asserts the pipeline-order contract on the composed gateway:
 #      memory_limiter FIRST, NO `batch` processor (deprecated; batching is
-#      sending_queue.batch on the exporter), cumulativetodelta only on metrics,
+#      sending_queue.batch on the exporter), cumulative_to_delta only on metrics,
 #      tail_sampling only on traces.
 # 3. If `weaver` is on PATH, runs the Step-2 semconv registry check + policies.
 #
@@ -18,7 +18,11 @@ REPO="$(cd "${HERE}/../.." && pwd)"
 source "${REPO}/observability/versions.env"
 
 BIN_DIR="${BIN_DIR:-/tmp/otelcol-bin}"
-OTELCOL="${OTELCOL:-$(command -v otelcol-contrib || echo "${BIN_DIR}/otelcol-contrib")}"
+# Default to the pinned BIN_DIR build, NOT whatever is on PATH. The canonical
+# `cumulative_to_delta` component name (ISI-7647) is only known to 0.164.0+; an
+# older otelcol-contrib on PATH rejects it and fails validation spuriously. An
+# explicit OTELCOL override is still honored but version-checked below.
+OTELCOL="${OTELCOL:-${BIN_DIR}/otelcol-contrib}"
 YQ="${YQ:-yq}"
 
 fail=0
@@ -27,13 +31,17 @@ err() { printf '\033[1;31m[validate] FAIL:\033[0m %s\n' "$*" >&2; fail=1; }
 
 command -v "$YQ" >/dev/null 2>&1 || { echo "yq (v4) not found" >&2; exit 2; }
 
-if [[ ! -x "$OTELCOL" ]]; then
-  ver="${OTEL_COLLECTOR_VERSION#v}"
-  log "downloading otelcol-contrib ${ver} -> ${OTELCOL}"
+ver="${OTEL_COLLECTOR_VERSION#v}"
+# Fetch/repoint to the pinned build if the resolved binary is missing OR a
+# different version — validating against a stale otelcol gives false failures.
+if [[ ! -x "$OTELCOL" ]] || ! "$OTELCOL" --version 2>/dev/null | grep -qw "$ver"; then
+  log "pinning otelcol-contrib ${ver} -> ${BIN_DIR}/otelcol-contrib"
   mkdir -p "$BIN_DIR"; OTELCOL="${BIN_DIR}/otelcol-contrib"
-  url="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${ver}/otelcol-contrib_${ver}_linux_amd64.tar.gz"
-  curl -fsSL "$url" | tar -xz -C "$BIN_DIR" otelcol-contrib
-  chmod +x "$OTELCOL"
+  if [[ ! -x "$OTELCOL" ]] || ! "$OTELCOL" --version 2>/dev/null | grep -qw "$ver"; then
+    url="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${ver}/otelcol-contrib_${ver}_linux_amd64.tar.gz"
+    curl -fsSL "$url" | tar -xz -C "$BIN_DIR" otelcol-contrib
+    chmod +x "$OTELCOL"
+  fi
 fi
 
 # Deterministic env for ${env:...} expansion.
@@ -61,8 +69,8 @@ while IFS= read -r line; do
   first="${procs%%,*}"
   [[ "$first" == "memory_limiter" ]] || err "gateway-advanced/${pipe}: memory_limiter is not first"
   [[ ",${procs//, /,}," != *",batch,"* ]] || err "gateway-advanced/${pipe}: deprecated batch processor present (use exporter sending_queue.batch)"
-  if [[ ",${procs}," == *",cumulativetodelta,"* && "$pipe" != "metrics" ]]; then
-    err "gateway-advanced/${pipe}: cumulativetodelta outside the metrics pipeline"
+  if [[ ",${procs}," == *",cumulative_to_delta,"* && "$pipe" != "metrics" ]]; then
+    err "gateway-advanced/${pipe}: cumulative_to_delta outside the metrics pipeline"
   fi
   if [[ ",${procs}," == *",tail_sampling,"* && "$pipe" != "traces" ]]; then
     err "gateway-advanced/${pipe}: tail_sampling outside the traces pipeline"

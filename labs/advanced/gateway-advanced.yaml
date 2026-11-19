@@ -150,7 +150,7 @@ spec:
             probabilistic:
               sampling_percentage: 10
       # --- metrics temporality (unchanged from baseline) ---
-      cumulativetodelta: {}
+      cumulative_to_delta: {}
       # No `batch` processor (deprecated): batching is on the exporter below.
 
     exporters:
@@ -187,7 +187,7 @@ spec:
           exporters: [otlp_http/dynatrace]
         metrics:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, resource/costcenter, transform/cardinality, cumulativetodelta]
+          processors: [memory_limiter, k8sattributes, resource/costcenter, transform/cardinality, cumulative_to_delta]
           exporters: [otlp_http/dynatrace]
         logs:
           receivers: [otlp]

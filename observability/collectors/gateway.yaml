@@ -2,7 +2,7 @@
 #
 # Pipeline contract (ISI-6792, and the reference "correct" order for M3's
 # planted-defect hunt — compare labs/defects.md #5):
-#   memory_limiter FIRST -> k8sattributes -> cumulativetodelta (metrics only); NO batch processor (exporter-level batching)
+#   memory_limiter FIRST -> k8sattributes -> cumulative_to_delta (metrics only); NO batch processor (exporter-level batching)
 #
 # Receives OTLP (gRPC+HTTP) from the DaemonSet logs collector and from
 # instrumented apps, enriches with Kubernetes metadata, converts cumulative
@@ -103,11 +103,15 @@ spec:
           - sources:
               - from: resource_attribute
                 name: k8s.pod.ip
-      # 3. cumulativetodelta: counters arrive cumulative from most SDKs and the
+      # 3. cumulative_to_delta: counters arrive cumulative from most SDKs and the
       #    platform; Dynatrace ingests them better as deltas (rate semantics).
       #    Applies to the metrics pipeline only — the processor does not
       #    support traces/logs signals.
-      cumulativetodelta: {}
+      #    NAME: `cumulative_to_delta` is the canonical component type. The older
+      #    `cumulativetodelta` alias still resolves but logs a deprecation warning
+      #    on otelcol-contrib 0.164.0 ("...alias is deprecated; use
+      #    'cumulative_to_delta' instead") — use the snake_case form (ISI-7647).
+      cumulative_to_delta: {}
       # NOTE: there is deliberately no `batch` processor. It is deprecated;
       # batching is configured on the exporter (`sending_queue.batch`) below.
 
@@ -161,7 +165,7 @@ spec:
           exporters: [otlp_http/dynatrace]
         metrics:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, cumulativetodelta]
+          processors: [memory_limiter, k8sattributes, cumulative_to_delta]
           exporters: [otlp_http/dynatrace]
         logs:
           receivers: [otlp]

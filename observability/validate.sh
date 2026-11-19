@@ -4,8 +4,8 @@
 # 1. Extracts .spec.config from each OpenTelemetryCollector CR and validates it
 #    with `otelcol validate` (downloads the pinned otelcol-contrib if needed).
 # 2. Asserts the pipeline-order contract:
-#      memory_limiter FIRST, k8sattributes before cumulativetodelta,
-#      cumulativetodelta only on metrics, NO `batch` processor (deprecated),
+#      memory_limiter FIRST, k8sattributes before cumulative_to_delta,
+#      cumulative_to_delta only on metrics, NO `batch` processor (deprecated),
 #      and exporter-level batching (sending_queue.batch) enabled on every exporter.
 # 3. Renders the pinned operator + cert-manager manifests with kubectl --dry-run
 #    server-side if a cluster is reachable (skipped offline).
@@ -35,7 +35,11 @@ command -v "$YQ" >/dev/null 2>&1 || { echo "yq (v4) not found. Install: https://
 # detect the arch (do NOT hard-code amd64 — broke on Apple-Silicon/arm64) using
 # the same mapping as install-tools.sh, retry, and verify the SHA256 checksum.
 if [[ ! -x "$OTELCOL" ]]; then
-  if command -v otelcol-contrib >/dev/null 2>&1; then
+  # Only trust a baked-in otelcol-contrib if it matches the pinned version. The
+  # canonical `cumulative_to_delta` name (ISI-7647) is unknown to builds older
+  # than 0.164.0, so a stale PATH binary would reject the config spuriously.
+  if command -v otelcol-contrib >/dev/null 2>&1 \
+       && otelcol-contrib --version 2>/dev/null | grep -qw "${OTEL_COLLECTOR_VERSION#v}"; then
     OTELCOL="$(command -v otelcol-contrib)"
     log "using baked-in otelcol-contrib: ${OTELCOL}"
   else
@@ -113,13 +117,13 @@ check_order() { # file, name, pipeline, expected-csv
 
 GW="${HERE}/collectors/gateway.yaml"
 check_order "$GW" gateway traces  "memory_limiter, k8sattributes"
-check_order "$GW" gateway metrics "memory_limiter, k8sattributes, cumulativetodelta"
+check_order "$GW" gateway metrics "memory_limiter, k8sattributes, cumulative_to_delta"
 check_order "$GW" gateway logs    "memory_limiter, k8sattributes"
 DS="${HERE}/collectors/daemonset.yaml"
 check_order "$DS" daemonset logs  "memory_limiter"
 
 # memory_limiter first / no batch processor anywhere, k8sattributes before
-# cumulativetodelta, cumulativetodelta never outside metrics.
+# cumulative_to_delta, cumulative_to_delta never outside metrics.
 for file in "$GW" "$DS"; do
   name="$("$YQ" '.metadata.name' "$file")"
   while IFS= read -r line; do
@@ -128,8 +132,8 @@ for file in "$GW" "$DS"; do
     first="${procs%%,*}"
     [[ "$first" == "memory_limiter" ]] || err "${name}/${pipe}: memory_limiter is not first"
     [[ ",${procs//, /,}," != *",batch,"* ]] || err "${name}/${pipe}: deprecated batch processor present (use exporter sending_queue.batch)"
-    if [[ ",${procs}," == *",cumulativetodelta,"* && "$pipe" != "metrics" ]]; then
-      err "${name}/${pipe}: cumulativetodelta outside the metrics pipeline"
+    if [[ ",${procs}," == *",cumulative_to_delta,"* && "$pipe" != "metrics" ]]; then
+      err "${name}/${pipe}: cumulative_to_delta outside the metrics pipeline"
     fi
   done < <("$YQ" '.spec.config.service.pipelines | to_entries | map(.key + ": " + (.value.processors | join(", "))) | .[]' "$file")
 done

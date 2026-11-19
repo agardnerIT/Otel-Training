@@ -49,7 +49,7 @@ processors:
 # note this gateway has NO `batch` processor — batching is on the exporter
 # (sending_queue.batch), which is still "last". memory_limiter stays FIRST):
 #   traces:  [memory_limiter, k8sattributes, transform/costcenter]
-#   metrics: [memory_limiter, k8sattributes, transform/costcenter, cumulativetodelta]
+#   metrics: [memory_limiter, k8sattributes, transform/costcenter, cumulative_to_delta]
 #   logs:    [memory_limiter, k8sattributes, transform/costcenter]
 #
 # The fully merged gateway reference is labs/advanced/gateway-advanced.yaml.

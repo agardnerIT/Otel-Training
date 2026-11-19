@@ -6,7 +6,7 @@
 # to the gateway collector — the gateway owns enrichment + Dynatrace export.
 #
 # Deliberately minimal pipeline (memory_limiter first, no batch processor): the
-# k8sattributes and cumulativetodelta stages live on the gateway
+# k8sattributes and cumulative_to_delta stages live on the gateway
 # (collectors/gateway.yaml), which is the single aggregation + export tier.
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector

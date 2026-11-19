@@ -68,7 +68,7 @@ never `player.id`/`round.id`.
 
 !!! note "Delta temporality"
     The baseline metrics pipeline converts counters to delta via
-    `cumulativetodelta`, but connector output does **not** pass through it. Set
+    `cumulative_to_delta`, but connector output does **not** pass through it. Set
     `aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA` on the connector so
     `casino.red.*` follows the tenant's delta convention instead of shipping
     cumulative.

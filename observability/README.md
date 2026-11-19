@@ -14,7 +14,7 @@ nodes (kind)                          observability namespace
 │  filelog /var/log/pods   │ ───────► │  otlp recv (4317 grpc / 4318 http) │
 │  memory_limiter          │          │  memory_limiter                    │
 └──────────────────────────┘          │  → k8sattributes                   │
-                                      │  → cumulativetodelta (metrics)     │
+                                      │  → cumulative_to_delta (metrics)     │
    apps / auto-instrumentation ─────► │  (exporter batching)               │
                                       │  otlp_http ──► Dynatrace tenant     │
                                       └────────────────────────────────────┘
@@ -28,7 +28,7 @@ reference "correct" answer for the M3 planted-defect hunt
 - `memory_limiter` **first** (self-protection before any fan-out)
 - `k8sattributes` (we're in Kubernetes: enrichment at the aggregation tier,
   associated via attributes forwarded by the DaemonSet, then connection IP)
-- `cumulativetodelta` — **metrics pipeline only** (counters → delta
+- `cumulative_to_delta` — **metrics pipeline only** (counters → delta
   temporality, which Dynatrace ingests as rates)
 - **no `batch` processor** — it is deprecated; batching is `sending_queue.batch` on the exporter
 
@@ -84,7 +84,7 @@ immediately.
 - extracts `.spec.config` from each CR and runs `otelcol validate`
   (downloads pinned `otelcol-contrib` 0.164.0 on first run);
 - asserts the processor-order contract on every pipeline
-  (memory_limiter first, no batch processor, cumulativetodelta only on metrics);
+  (memory_limiter first, no batch processor, cumulative_to_delta only on metrics);
 - if a cluster is reachable, adds a server-side `kubectl apply --dry-run`.
 
 Both CRs are also schema-checked against the operator's `v1beta1` CRD.

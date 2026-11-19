@@ -35,7 +35,7 @@ Kubernetes** (never `resourcedetection` here).
 
 ```
                          ┌─ traces  : memory_limiter → k8sattributes → resource/costcenter → tail_sampling → (exporter batching)
-otlp (gRPC/HTTP) ─┤─ metrics : memory_limiter → k8sattributes → resource/costcenter → transform/cardinality → cumulativetodelta → (exporter batching)
+otlp (gRPC/HTTP) ─┤─ metrics : memory_limiter → k8sattributes → resource/costcenter → transform/cardinality → cumulative_to_delta → (exporter batching)
                          └─ logs    : memory_limiter → k8sattributes → resource/costcenter → transform/pii + redaction → (exporter batching)
                                                                                                                          └→ otlp_http/dynatrace
 ```

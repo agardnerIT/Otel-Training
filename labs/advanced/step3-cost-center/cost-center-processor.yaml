@@ -21,7 +21,7 @@ processors:
 
 # Pipeline wiring (add resource/costcenter after k8sattributes in each pipeline):
 #   traces:  [memory_limiter, k8sattributes, resource/costcenter]
-#   metrics: [memory_limiter, k8sattributes, resource/costcenter, cumulativetodelta]
+#   metrics: [memory_limiter, k8sattributes, resource/costcenter, cumulative_to_delta]
 #   logs:    [memory_limiter, k8sattributes, resource/costcenter]
 #
 # And add the env vars to the collector CR spec.env:

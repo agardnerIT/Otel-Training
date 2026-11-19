@@ -76,7 +76,7 @@ answer** for processor order:
 - `k8sattributes` — enrichment: attaches `k8s.pod.name`, `k8s.namespace.name`,
   and friends (it can do this because the DaemonSet forwards pod metadata and
   the gateway runs in-cluster)
-- `cumulativetodelta` — **metrics pipeline only**: counters arrive cumulative,
+- `cumulative_to_delta` — **metrics pipeline only**: counters arrive cumulative,
   Dynatrace wants rates
 - **no `batch` processor** — batching is configured on the `otlp_http` exporter
   (`sending_queue.batch`), which exports to your Dynatrace tenant
@@ -161,7 +161,7 @@ the exporter:
       pipelines:
         metrics:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, transform/drop_player_id, cumulativetodelta]
+          processors: [memory_limiter, k8sattributes, transform/drop_player_id, cumulative_to_delta]
           exporters: [otlp_http/dynatrace]
 ```
 

@@ -1,11 +1,11 @@
-# Catalog B6 — Metric temporality (`cumulativetodelta`)
+# Catalog B6 — Metric temporality (`cumulative_to_delta`)
 
 !!! abstract "At a glance"
     **Theme:** metrics / collector · **Time:** 20 min · **Difficulty:** med ·
     **Skill:** `otel-collector` ·
     **Reference:** `labs/advanced/catalog-b6-cumulativetodelta/`
 
-**Goal:** the gateway already carries `cumulativetodelta: {}` — but empty, it
+**Goal:** the gateway already carries `cumulative_to_delta: {}` — but empty, it
 converts everything blindly and keeps state forever. You will use `opencode` with
 the `otel-collector` skill to make it **explicit and targeted**, understand *why*
 delta temporality is the right shape for Dynatrace, and verify the casino counters
@@ -18,7 +18,7 @@ driving the agent with a numbered prompt **ladder** rather than one mega-prompt.
 flowchart LR
   cum["Cumulative counter<br/>1, 3, 6, 10, 15 … (resets on restart)"] --> ml["memory_limiter"]
   ml --> k8s["k8sattributes"]
-  k8s --> c2d["cumulativetodelta<br/>include: casino.bets.count, casino.payout.total"]
+  k8s --> c2d["cumulative_to_delta<br/>include: casino.bets.count, casino.payout.total"]
   c2d -->|"delta: 1, 2, 3, 4, 5 …"| b["batch"]
   b --> dt["Dynatrace<br/>sum() over a window = events in window"]
 ```
@@ -41,7 +41,7 @@ gymnastics.
 Most SDKs export counters as **cumulative** — an ever-climbing total. Ask "how
 many bets in the last minute?" and a cumulative series can't tell you cheaply:
 you'd have to subtract adjacent points, and a pod restart drops the line to 0,
-producing a false negative rate. And the current `cumulativetodelta: {}` is
+producing a false negative rate. And the current `cumulative_to_delta: {}` is
 **empty** — it converts every sum blindly (including ones that shouldn't be) and
 never bounds its state. Confirm it: run the [checkpoint DQL](#verify) now on the
 raw counter — it's a staircase, and a restart shows a cliff.
@@ -55,7 +55,7 @@ only the processor body:
 
 ```yaml
 processors:
-  cumulativetodelta:
+  cumulative_to_delta:
     include:
       metrics: [casino.bets.count, casino.payout.total]
       match_type: strict        # exact names; `regexp` for a family prefix
@@ -64,12 +64,12 @@ processors:
 service:
   pipelines:
     metrics:
-      processors: [memory_limiter, k8sattributes, cumulativetodelta, batch]
+      processors: [memory_limiter, k8sattributes, cumulative_to_delta, batch]
 ```
 
 !!! danger "Invariants still hold"
     `memory_limiter` stays **first** and `batch` stays **last**. The position of
-    `cumulativetodelta` is unchanged — only its body goes from `{}` to the targeted
+    `cumulative_to_delta` is unchanged — only its body goes from `{}` to the targeted
     config. The processor supports the **metrics** signal only; it must not be
     added to the traces or logs pipeline (that fails validation).
 
@@ -90,8 +90,8 @@ before you let it continue.
 
     ```text
     Using the otel-collector skill, read observability/collectors/gateway.yaml —
-    do not edit. Show me the current cumulativetodelta config and its position in
-    the metrics pipeline, and explain what an empty `cumulativetodelta: {}`
+    do not edit. Show me the current cumulative_to_delta config and its position in
+    the metrics pipeline, and explain what an empty `cumulative_to_delta: {}`
     converts.
     ```
     **What you should see:** the agent reports the empty `{}` between
@@ -125,7 +125,7 @@ before you let it continue.
 === "P4 · Steer — confirm metrics-only + temporality"
 
     ```text
-    Confirm cumulativetodelta is on the metrics pipeline ONLY and that traces/logs
+    Confirm cumulative_to_delta is on the metrics pipeline ONLY and that traces/logs
     are unchanged. In one sentence, state why Dynatrace prefers delta counters for
     rate and SLO math.
     ```
@@ -169,10 +169,10 @@ timeseries payout = sum(casino.payout.total), from: now() - 1h, interval: 1m
     - **Leaves it empty / converts everything:** *"scope it with include.metrics to
       casino.bets.count and casino.payout.total — converting gauges or
       non-monotonic sums is wrong."*
-    - **Adds it to traces or logs:** *"cumulativetodelta is metrics-only; it must
+    - **Adds it to traces or logs:** *"cumulative_to_delta is metrics-only; it must
       not appear on the traces or logs pipeline."*
     - **Breaks the invariant** (moves it after batch, or memory_limiter not first):
-      *"memory_limiter first, batch last; cumulativetodelta stays between
+      *"memory_limiter first, batch last; cumulative_to_delta stays between
       k8sattributes and batch."*
     - **Drops `max_staleness`** (stale series holds forever): *"add max_staleness:
       10m so a series that stops reporting is forgotten, not replayed as a huge
@@ -180,7 +180,7 @@ timeseries payout = sum(casino.payout.total), from: now() - 1h, interval: 1m
 
 ## Definition of done
 
-- [ ] `cumulativetodelta` is explicit — `include.metrics` names the two counters
+- [ ] `cumulative_to_delta` is explicit — `include.metrics` names the two counters
 - [ ] `max_staleness` + `initial_value` set; `match_type: strict`
 - [ ] On the **metrics** pipeline only, between `k8sattributes` and `batch`
 - [ ] Invariants hold (memory_limiter first, batch last); traces/logs untouched

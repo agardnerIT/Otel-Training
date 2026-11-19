@@ -191,7 +191,7 @@ processors:
     check_interval: 1s
     limit_percentage: 70
     spike_limit_percentage: 30
-  cumulativetodelta: {}
+  cumulative_to_delta: {}
   k8sattributes/k8S:  # ❌ Naming inconsistency
     extract:
       metadata:
@@ -268,7 +268,7 @@ service:
       exporters: [spanmetrics,otlphttp]
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter,transform,cumulativetodelta,batch]  # ❌ No routing
+      processors: [memory_limiter,transform,cumulative_to_delta,batch]  # ❌ No routing
       exporters: [otlphttp]
     logs:
       receivers: [otlp]
