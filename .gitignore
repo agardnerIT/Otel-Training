@@ -1,5 +1,5 @@
-# local secrets — filled-in copies of the *.env.sample / *.env.example files.
-# Keep the samples tracked (.env.sample, .env.example); never commit a real .env.
+# local secrets — the filled-in copy of the single canonical .env.sample.
+# Keep the sample tracked (/.env.sample); never commit a real .env (ISI-7629).
 /.env
 .devcontainer/.env
 

@@ -28,7 +28,10 @@ cat ~/.otel-training-coldstart.txt   # -> recorded cold-start seconds
 ## Required secrets / env (per attendee)
 
 Injected via **GitHub Codespaces secrets** — never committed, never baked into the
-image. Full template in [`.env.example`](./.env.example).
+image. Full template in the single canonical [`.env.sample`](../.env.sample)
+(repo root). For a **local** dev container, copy it to `.env`, fill it in, and
+rebuild — `bootstrap/load-env.sh` (sourced from postCreate/postStart) loads it
+automatically; no `source`/`make` step (ISI-7629 single `.env` flow).
 
 One canonical table lives in
 [`docs-site/setup.md`](../../docs-site/setup.md#environment-variables); the
@@ -136,14 +139,18 @@ dtctl skills status --plain
 .devcontainer/
 ├── devcontainer.json        # image build args, docker-in-docker, ports, remoteEnv, hooks
 ├── Dockerfile               # ubuntu-24.04 base + baked toolchain
-├── .env.example             # documented per-attendee secrets/env
 └── bootstrap/
     ├── install-tools.sh        # idempotent, version-pinnable, arch-aware tool install (incl. dtctl + opencode)
     ├── verify-dtctl.sh         # gate: prove dtctl installed + runnable (ISI-7175)
     ├── dispense-llm.sh         # mint workshop LLM proxy key + wire opencode (ISI-7138)
     ├── install-dtctl-skill.sh  # install the dtctl Agent Skill into opencode (ISI-7176)
+    ├── load-env.sh            # single `.env` flow: source repo-root .env into bootstrap + shells (ISI-7629)
+    ├── preflight.sh           # local host checks: inotify/cpu/mem floors + stray-cluster (ISI-7629)
     ├── kind-config.yaml        # single-node kind cluster w/ 80/443 + NodePorts
-    ├── create-cluster.sh       # idempotent cluster create / re-attach
-    ├── postCreate.sh           # once: verify tools, wire opencode + skill, create cluster, record timing
-    └── postStart.sh            # every start: heal/re-attach cluster
+    ├── create-cluster.sh       # idempotent + deterministic cluster create / re-attach
+    ├── postCreate.sh           # once: load .env, verify tools, wire opencode + skill, create cluster, record timing
+    └── postStart.sh            # every start: load .env, heal/re-attach cluster
 ```
+
+> The single canonical env sample is the **repo-root** [`.env.sample`](../.env.sample);
+> there is no `.devcontainer/.env.example` (removed in ISI-7629).

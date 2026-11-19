@@ -61,8 +61,8 @@ PARTICIPANT_ID
 ## Environment variables
 
 This is the **one canonical contract** for every variable the training consumes.
-`.env.sample` and `.devcontainer/.env.example` mirror it — if anything disagrees,
-this table wins.
+The single [`.env.sample`](https://github.com/henrikrexed/Otel-Training/blob/main/.env.sample)
+at the repo root mirrors it — if anything disagrees, this table wins.
 
 | Variable | Type | Consumed by | Required? |
 |---|---|---|---|
@@ -98,6 +98,67 @@ track's `opencode` LLM dispenser (unrelated to the DT tenant):
     Dynatrace **OAuth client** (`dt0s02`), configured in its own
     [advanced section](advanced/getting-started.md) — it is deliberately kept out
     of the required token set above. Most attendees do not need it.
+
+### Running locally (not in Codespaces)
+
+In GitHub Codespaces you set the variables above as **Codespaces secrets** and
+never touch a file. To run the same dev container **locally** (VS Code Dev
+Containers / Docker Desktop) there is **one** `.env` flow — no `source`, no
+`make`, rebuild-only:
+
+1. Copy the single canonical sample and fill it in:
+
+    ```bash
+    cp .env.sample .env       # repo root; .env is gitignored
+    ```
+
+2. Edit `.env` (at minimum set `PARTICIPANT_ID`; add the `DT_*` tokens for the
+   Dynatrace labs).
+3. **Rebuild the container** (*Dev Containers: Rebuild Container*). That is it —
+   `bootstrap/load-env.sh` (sourced by postCreate/postStart) exports every
+   non-empty value from `.env` into the bootstrap **and** wires your interactive
+   terminals, so `make up` / `kubectl` see them with no extra step.
+
+!!! note "One sample, one file"
+    There is exactly one env sample: the **repo-root** `.env.sample`. The old
+    `.devcontainer/.env.example` was removed — don't look for a second one.
+    Empty lines in `.env` never override a value already in the environment (so a
+    committed-blank `.env` can't clobber a Codespaces secret).
+
+### Local minimum (Docker Desktop / Linux host)
+
+A local run needs real headroom — the Codespace requests **4 vCPU / 8 GB RAM /
+32 GB disk** and your Docker engine should match:
+
+| Resource | Minimum | Where to set |
+|---|---|---|
+| CPUs | **4** | Docker Desktop → Settings → Resources (WSL2: `.wslconfig`) |
+| Memory | **8 GB** | Docker Desktop → Settings → Resources (WSL2: `.wslconfig`) |
+| Disk | **32 GB** free | Docker Desktop → Settings → Resources |
+| `fs.inotify.max_user_watches` | **524288** | host sysctl (Linux/WSL2) |
+| `fs.inotify.max_user_instances` | **512** | host sysctl (Linux/WSL2) |
+
+Raise the inotify limits on a Linux/WSL2 host (kind, kubectl, and the collectors
+all register file watchers and fail silently when exhausted):
+
+```bash
+sudo sysctl -w fs.inotify.max_user_watches=524288
+sudo sysctl -w fs.inotify.max_user_instances=512
+# persist across reboots:
+echo -e 'fs.inotify.max_user_watches=524288\nfs.inotify.max_user_instances=512' \
+  | sudo tee /etc/sysctl.d/99-otel-training.conf
+```
+
+`bootstrap/preflight.sh` checks all of the above on every container start and
+prints the exact remediation for anything below floor (it only **warns** — it
+never blocks the container from opening). It also flags any **stray** kind
+cluster whose name doesn't match this run, so you don't end up with a second,
+differently-named cluster eating memory:
+
+```bash
+# delete every kind cluster except the one this run uses:
+CLEANUP_STRAY=1 bash .devcontainer/bootstrap/create-cluster.sh
+```
 
 ## 2. Verify the kind cluster
 

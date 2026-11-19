@@ -57,8 +57,8 @@
   // prompt*, not the injection.) Names MUST equal the env var names the bootstrap
   // scripts consume (deploy-environment.sh, deploy/dynatrace/install.sh,
   // observability/install.sh, dispense-llm.sh). The canonical contract +
-  // descriptions are mirrored in .env.sample and .devcontainer/.env.example.
-  // NEVER bake real tokens into the image.
+  // descriptions live in the ONE repo-root `.env.sample` (ISI-7629 single
+  // `.env` flow). NEVER bake real tokens into the image.
   "secrets": {
     "DT_TENANT": {
       "description": "Dynatrace tenant base URL, e.g. https://abc12345.live.dynatrace.com (operator apiUrl + OTLP ingest derive from this)."
@@ -91,6 +91,11 @@
   // still originates from the Codespaces secret / the user's host env — remoteEnv
   // only forwards it into the container. KUBECONFIG and KIND_CLUSTER_NAME are
   // non-secret operational vars.
+  //
+  // LOCAL without exporting on the host? Use the single `.env` flow instead
+  // (ISI-7629): copy the repo-root `.env.sample` to `.env`, fill it in, and
+  // rebuild — postCreate's load-env.sh sources `.env` and these same names are
+  // populated without any `export` or `source` step.
   "remoteEnv": {
     "DT_TENANT": "${localEnv:DT_TENANT}",
     "DT_OPERATOR_TOKEN": "${localEnv:DT_OPERATOR_TOKEN}",

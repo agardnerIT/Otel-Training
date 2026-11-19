@@ -13,6 +13,14 @@ TIMING_FILE="$HOME/.otel-training-coldstart.txt"
 
 log() { echo "==> $*"; }
 
+# Single `.env` flow (ISI-7629 / #61): load the ONE canonical repo-root `.env`
+# into this bootstrap process (and into interactive shells) BEFORE anything
+# reads PARTICIPANT_ID / FULL_DEPLOY / DT_* — so a local rebuild picks up the
+# attendee's values with no manual `make`/`source`. No-op in Codespaces (vars
+# arrive as secrets via remoteEnv).
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/load-env.sh"
+
 # Enable the DCO sign-off hook (.githooks/prepare-commit-msg) so every commit made
 # in the codespace carries a Signed-off-by trailer (the upstream repo enforces DCO).
 # Non-fatal: a missing git identity or a non-git checkout must not block bring-up.
