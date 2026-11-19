@@ -41,13 +41,13 @@ opencode run "Using the otel-collector skill: in observability/collectors/gatewa
 add a tail_sampling processor to the TRACES pipeline with decision_wait 10s and \
 four policies — status_code=ERROR keep 100%, latency>1s keep 100%, \
 casino.outcome=jackpot keep 100%, and everything else probabilistic at 10%. Place \
-it after k8sattributes/resource and before batch; keep memory_limiter first."
+it after k8sattributes/resource and before the exporter; keep memory_limiter first."
 ```
 
 ## ③ Review — read the diff
 
 Confirm all four policies are present, `decision_wait` is 10s, and the processor
-is in the **traces** pipeline after `k8sattributes`/`resource`, before `batch`.
+is in the **traces** pipeline after `k8sattributes`/`resource`, before the exporter.
 Reference answer: `labs/advanced/step6-tail-sampling/tail-sampling-processor.yaml`.
 
 !!! warning "If the agent gets it wrong — steer it back"
@@ -91,7 +91,7 @@ fetch spans, from: now() - 1h
 
 ## Definition of done
 
-- [ ] The `tail_sampling` processor is wired into the traces pipeline (after `k8sattributes`/`resource`, before `batch`)
+- [ ] The `tail_sampling` processor is wired into the traces pipeline (after `k8sattributes`/`resource`, before the exporter)
 - [ ] The four policies are in place (error / slow / jackpot → 100%, else 10%)
 - [ ] Total trace volume drops after the fix
 - [ ] The absolute error/slow/jackpot count is unchanged

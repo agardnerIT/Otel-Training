@@ -7,7 +7,7 @@
 #   Step 5  redaction + transform/pii — logs: mask email / PAN / SSN
 #   Step 6  tail_sampling            — traces: keep errors/slow/jackpots, sample rest 10%
 #
-# Invariants (critical rules): memory_limiter FIRST, batch LAST, k8sattributes (Kubernetes).
+# Invariants (critical rules): memory_limiter FIRST, NO batch processor (exporter-level batching), k8sattributes (Kubernetes).
 # Attendees reach this incrementally; facilitators can apply it directly.
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
@@ -151,11 +151,7 @@ spec:
               sampling_percentage: 10
       # --- metrics temporality (unchanged from baseline) ---
       cumulativetodelta: {}
-      # --- invariant: last ---
-      batch:
-        timeout: 5s
-        send_batch_size: 512
-        send_batch_max_size: 1024
+      # No `batch` processor (deprecated): batching is on the exporter below.
 
     exporters:
       otlphttp/dynatrace:
@@ -171,7 +167,15 @@ spec:
         sending_queue:
           enabled: true
           num_consumers: 4
-          queue_size: 512
+          # Queue holds unbatched requests with exporter-level batching: size in items.
+          sizer: items
+          queue_size: 10000
+          batch:
+            enabled: true
+            sizer: items
+            min_size: 512        # was batch processor `send_batch_size`
+            max_size: 1024       # was `send_batch_max_size`
+            flush_timeout: 5s    # was `timeout`
 
     service:
       extensions:
@@ -179,15 +183,15 @@ spec:
       pipelines:
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, resource/costcenter, tail_sampling, batch]
+          processors: [memory_limiter, k8sattributes, resource/costcenter, tail_sampling]
           exporters: [otlphttp/dynatrace]
         metrics:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, resource/costcenter, transform/cardinality, cumulativetodelta, batch]
+          processors: [memory_limiter, k8sattributes, resource/costcenter, transform/cardinality, cumulativetodelta]
           exporters: [otlphttp/dynatrace]
         logs:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, resource/costcenter, redaction, transform/pii, batch]
+          processors: [memory_limiter, k8sattributes, resource/costcenter, redaction, transform/pii]
           exporters: [otlphttp/dynatrace]
       telemetry:
         logs:

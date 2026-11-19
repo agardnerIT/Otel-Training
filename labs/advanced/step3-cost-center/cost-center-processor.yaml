@@ -7,7 +7,7 @@
 #
 # Merge this `resource/costcenter` processor into observability/collectors/gateway.yaml and
 # add it to every pipeline right after k8sattributes (enrichment stays together, before
-# batch). The fully merged result is labs/advanced/gateway-advanced.yaml.
+# the exporter). The fully merged result is labs/advanced/gateway-advanced.yaml.
 
 processors:
   resource/costcenter:
@@ -20,9 +20,9 @@ processors:
         action: upsert
 
 # Pipeline wiring (add resource/costcenter after k8sattributes in each pipeline):
-#   traces:  [memory_limiter, k8sattributes, resource/costcenter, batch]
-#   metrics: [memory_limiter, k8sattributes, resource/costcenter, cumulativetodelta, batch]
-#   logs:    [memory_limiter, k8sattributes, resource/costcenter, batch]
+#   traces:  [memory_limiter, k8sattributes, resource/costcenter]
+#   metrics: [memory_limiter, k8sattributes, resource/costcenter, cumulativetodelta]
+#   logs:    [memory_limiter, k8sattributes, resource/costcenter]
 #
 # And add the env vars to the collector CR spec.env:
 #   - name: COST_CENTER

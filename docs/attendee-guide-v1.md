@@ -303,13 +303,13 @@ kubectl rollout status deploy/casino-scoring -n casino
 
 Goal: stop hand-editing collector YAML. Fix the casino's broken collector pipeline in BindPlane, add routing, validate, and roll it out to the cluster — staged, the way fleets are managed.
 
-**Concepts in play:** a collector pipeline is receivers → processors → exporters. Canonical processor order: **enrichment → filtering → aggregation → routing → export**, with `memory_limiter` first and `batch` last. Collector config is a product: versioned, validated, staged — never SSH'd. BindPlane talks OpAMP to your collectors; you push configurations and watch the fleet accept them.
+**Concepts in play:** a collector pipeline is receivers → processors → exporters. Canonical processor order: **enrichment → filtering → aggregation → routing → export**, with `memory_limiter` first and batching done in the exporter (`sending_queue.batch`) — the collector `batch` processor is deprecated. Collector config is a product: versioned, validated, staged — never SSH'd. BindPlane talks OpAMP to your collectors; you push configurations and watch the fleet accept them.
 
 ### 3.1 Inspect the broken collector config
 
 In BindPlane: **Configurations** → open the casino's active configuration (LABPIN: name).
 
-**What you should see:** the pipeline exists but is wrong — processors run in the wrong order (e.g. `batch` before enrichment, enrichment dropped entirely), there is **no `memory_limiter`**, and every exporter goes to the same place regardless of telemetry type.
+**What you should see:** the pipeline exists but is wrong — processors run in the wrong order (e.g. enrichment after filtering, enrichment dropped entirely), there is **no `memory_limiter`**, and every exporter goes to the same place regardless of telemetry type.
 
 Cross-check the raw YAML view in your Codespace if you prefer reading pipelines as text:
 
@@ -322,7 +322,7 @@ LABPIN: kubectl get -n casino otelcol/collector -o yaml   # or the helm values f
 In BindPlane, edit the processors into this order:
 
 ```
-memory_limiter → resourcedetection/k8sattributes (enrichment) → filter → batch → exporters
+memory_limiter → resourcedetection/k8sattributes (enrichment) → filter → exporters (with `sending_queue.batch` enabled)
 ```
 
 Add the missing `memory_limiter` (it must be first — it protects the collector itself):
@@ -338,7 +338,7 @@ Why order matters, in one sentence each:
 
 - `memory_limiter` first: shed load before spending memory on it.
 - Enrichment before filtering: you can't filter on an attribute you haven't added yet.
-- `batch` last: batch once, after all mutation, right before export.
+- Batch in the exporter (`sending_queue.batch`), not in a `batch` processor (deprecated): batch once, after all mutation, right before export.
 
 ### 3.3 Fix 2 — add enrichment
 
@@ -382,7 +382,7 @@ Same validation gate — but with BindPlane you never `kubectl edit` a live Daem
 
 **Definition of done — M3**
 
-- [ ] Pipeline order fixed: `memory_limiter` first, `batch` last, enrichment present
+- [ ] Pipeline order fixed: `memory_limiter` first, no `batch` processor (exporter-level batching enabled), enrichment present
 - [ ] Routing splits game vs. platform telemetry on an enriched attribute
 - [ ] Config validated in BindPlane and rolled out staged (canary → fleet)
 - [ ] Telemetry still flowing in Dynatrace; agent healthy in BindPlane

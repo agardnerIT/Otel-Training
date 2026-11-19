@@ -37,21 +37,21 @@ config with the `otel-collector` skill — goal, target file, skill:
 opencode run "Using the otel-collector skill: in observability/collectors/gateway.yaml \
 add a resource processor named resource/costcenter that sets the resource \
 attributes dt.cost.costcenter and dt.cost.product from the env vars COST_CENTER \
-and COST_PRODUCT. Wire it into all three pipelines AFTER k8sattributes and BEFORE \
-batch. Do not move memory_limiter (first) or batch (last)."
+and COST_PRODUCT. Wire it into all three pipelines AFTER k8sattributes. \
+Do not move memory_limiter (first) and do not add a batch processor."
 ```
 
 ## ③ Review — read the diff
 
-Confirm the processor lands **after `k8sattributes`, before `batch`** in every
+Confirm the processor lands **after `k8sattributes`, before the exporter** in every
 pipeline and that `memory_limiter` stays first. The reference answer is
 `labs/advanced/step3-cost-center/cost-center-processor.yaml`, already merged into
 the composed `labs/advanced/gateway-advanced.yaml` in the correct position.
 
 !!! warning "If the agent gets it wrong — steer it back"
-    If it puts the processor before `k8sattributes` or after `batch`, reply
-    *"memory_limiter must stay first and batch last; a resource processor goes
-    between k8sattributes and batch — move it there in every pipeline."*
+    If it puts the processor before `k8sattributes` or moves `memory_limiter`, reply
+    *"memory_limiter must stay first and there is no batch processor; a resource processor goes
+    after k8sattributes — move it there in every pipeline."*
 
 ## ④ Apply — kubectl (collector namespace, not GitOps)
 
@@ -93,7 +93,7 @@ fetch logs, from: now() - 1h
 
 ## Definition of done
 
-- [ ] The `resource/costcenter` processor is wired into the gateway (after `k8sattributes`, before `batch`)
+- [ ] The `resource/costcenter` processor is wired into the gateway (after `k8sattributes`, before the exporter)
 - [ ] `COST_CENTER` / `COST_PRODUCT` are set on the gateway deployment
 - [ ] The DQL returns rows keyed by `dt.cost.costcenter` / `dt.cost.product`
 - [ ] Cost allocation in Dynatrace splits DDU per cost center

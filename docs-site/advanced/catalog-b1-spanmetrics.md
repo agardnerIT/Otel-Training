@@ -57,7 +57,7 @@ service:
       exporters: [otlphttp/dynatrace, spanmetrics]   # feed the connector too
     metrics/spanmetrics:
       receivers: [spanmetrics]
-      processors: [memory_limiter, batch]            # invariants hold here
+      processors: [memory_limiter]            # invariants hold here
       exporters: [otlphttp/dynatrace]
 ```
 
@@ -96,7 +96,7 @@ never `player.id`/`round.id`.
     ```
     **What you should see:** a `connectors:` block plus the two pipeline edits.
     **Review check:** the new metrics pipeline keeps `memory_limiter` first and
-    `batch` last.
+    has no `batch` processor.
 
 === "P3 · Deepen — dimensions + buckets"
 
@@ -112,7 +112,7 @@ never `player.id`/`round.id`.
     ```text
     Confirm the connector is both an exporter (traces) and a receiver
     (metrics/spanmetrics), and that the invariants hold on every pipeline:
-    memory_limiter first, batch last.
+    memory_limiter first, no batch processor.
     ```
     **What you should see:** the agent re-reads the service block and confirms both
     attachments and the invariant order.
@@ -154,14 +154,14 @@ timeseries d_p90 = percentile(casino.red.duration, 90), by: { span.name }, from:
       exporting to Dynatrace as well as feeding spanmetrics."*
     - **Adds unbounded dimensions:** *"only span.name, status.code, casino.game.name
       and casino.outcome — no player.id or round.id."*
-    - **Breaks the invariant:** *"memory_limiter must be first and batch last on the
-      new metrics/spanmetrics pipeline."*
+    - **Breaks the invariant:** *"memory_limiter must be first and there must be no batch processor on the
+      new metrics/spanmetrics pipeline (batching is on the exporter)."*
 
 ## Definition of done
 
 - [ ] `spanmetrics` connector added with `namespace: casino.red` and a duration histogram
 - [ ] Wired as traces exporter + `metrics/spanmetrics` pipeline receiver
-- [ ] Invariants hold on every pipeline (memory_limiter first, batch last)
+- [ ] Invariants hold on every pipeline (memory_limiter first, no batch processor)
 - [ ] `casino.red.calls` and `casino.red.duration` return data in Grail
 - [ ] No casino application code changed
 

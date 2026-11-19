@@ -14,7 +14,7 @@ Health probes (`/health`, `/healthz`, `/readyz`) and the Prometheus `/metrics`
 scrape fire every few seconds on every pod. They are **spans with no diagnostic
 signal** — pure volume that inflates ingest cost and buries the money-path
 traces. The [`filter` processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/filterprocessor)
-drops them at the gateway, before batch and export, using OTTL conditions:
+drops them at the gateway, before export, using OTTL conditions:
 
 | Dropped when | Matches |
 |---|---|
@@ -24,14 +24,14 @@ drops them at the gateway, before batch and export, using OTTL conditions:
 
 ## The invariant (the whole lesson)
 
-The filter is inserted **between `k8sattributes` and `batch`**:
+The filter is inserted **after `k8sattributes`**:
 
 ```
-memory_limiter -> k8sattributes -> filter/drop_noise -> batch
+memory_limiter -> k8sattributes -> filter/drop_noise -> (exporter batching)
 ```
 
 - `memory_limiter` stays **first** — it must sit ahead of anything that fans out work.
-- `batch` stays **last** — nothing drops spans after they are batched for export.
+- There is **no `batch` processor** (deprecated) — batching happens in the exporter, after every processor has run.
 
 Only the **traces** pipeline changes; metrics and logs are untouched. `error_mode:
 ignore` means a span missing one of the matched attributes evaluates as "no match"

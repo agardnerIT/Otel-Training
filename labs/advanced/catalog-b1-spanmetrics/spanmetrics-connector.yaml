@@ -10,7 +10,7 @@
 #   Errors    -> casino.red.calls{status.code="STATUS_CODE_ERROR"}
 #   Duration  -> casino.red.duration           (histogram -> p50/p90/max)
 #
-# Invariants still hold: memory_limiter FIRST, batch LAST on every pipeline.
+# Invariants still hold: memory_limiter FIRST, NO batch processor (exporter-level batching) on every pipeline.
 
 connectors:
   spanmetrics:
@@ -41,12 +41,12 @@ service:
     # just an extra exporter fed the same spans.
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, k8sattributes, batch]
+      processors: [memory_limiter, k8sattributes]
       exporters: [otlphttp/dynatrace, spanmetrics]
 
     # A dedicated metrics pipeline consumes the connector output. memory_limiter
-    # first, batch last — invariants hold here too.
+    # first, no batch processor — invariants hold here too (batching is on the exporter).
     metrics/spanmetrics:
       receivers: [spanmetrics]
-      processors: [memory_limiter, batch]
+      processors: [memory_limiter]
       exporters: [otlphttp/dynatrace]

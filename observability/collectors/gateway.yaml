@@ -2,7 +2,7 @@
 #
 # Pipeline contract (ISI-6792, and the reference "correct" order for M3's
 # planted-defect hunt — compare labs/defects.md #5):
-#   memory_limiter FIRST -> k8sattributes -> cumulativetodelta (metrics only) -> batch LAST
+#   memory_limiter FIRST -> k8sattributes -> cumulativetodelta (metrics only); NO batch processor (exporter-level batching)
 #
 # Receives OTLP (gRPC+HTTP) from the DaemonSet logs collector and from
 # instrumented apps, enriches with Kubernetes metadata, converts cumulative
@@ -108,11 +108,8 @@ spec:
       #    Applies to the metrics pipeline only — the processor does not
       #    support traces/logs signals.
       cumulativetodelta: {}
-      # 4. batch must always be the last processor before export.
-      batch:
-        timeout: 5s
-        send_batch_size: 512
-        send_batch_max_size: 1024
+      # NOTE: there is deliberately no `batch` processor. It is deprecated;
+      # batching is configured on the exporter (`sending_queue.batch`) below.
 
     exporters:
       # otlphttp (not gRPC otlp): Dynatrace's OTLP ingest is an HTTP endpoint
@@ -143,7 +140,16 @@ spec:
         sending_queue:
           enabled: true
           num_consumers: 4
-          queue_size: 512
+          # With exporter-level batching the queue holds small, UNBATCHED
+          # requests, so size it in items (not requests) and give it headroom.
+          sizer: items
+          queue_size: 10000
+          batch:
+            enabled: true
+            sizer: items
+            min_size: 512        # was batch processor `send_batch_size`
+            max_size: 1024       # was `send_batch_max_size`
+            flush_timeout: 5s    # was `timeout`
 
     service:
       extensions:
@@ -151,15 +157,15 @@ spec:
       pipelines:
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, batch]
+          processors: [memory_limiter, k8sattributes]
           exporters: [otlphttp/dynatrace]
         metrics:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, cumulativetodelta, batch]
+          processors: [memory_limiter, k8sattributes, cumulativetodelta]
           exporters: [otlphttp/dynatrace]
         logs:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, batch]
+          processors: [memory_limiter, k8sattributes]
           exporters: [otlphttp/dynatrace]
       telemetry:
         logs:

@@ -5,7 +5,7 @@
 # parsed from the /var/log/pods path onto the resource, and forwards over OTLP
 # to the gateway collector — the gateway owns enrichment + Dynatrace export.
 #
-# Deliberately minimal pipeline (memory_limiter first, batch last): the
+# Deliberately minimal pipeline (memory_limiter first, no batch processor): the
 # k8sattributes and cumulativetodelta stages live on the gateway
 # (collectors/gateway.yaml), which is the single aggregation + export tier.
 apiVersion: opentelemetry.io/v1beta1
@@ -110,10 +110,7 @@ spec:
         check_interval: 1s
         limit_mib: 180
         spike_limit_mib: 50
-      batch:
-        timeout: 5s
-        send_batch_size: 512
-        send_batch_max_size: 1024
+      # No `batch` processor (deprecated) — see sending_queue.batch on the exporter.
 
     exporters:
       otlp/gateway:
@@ -127,7 +124,15 @@ spec:
         sending_queue:
           enabled: true
           num_consumers: 2
-          queue_size: 512
+          # Queue holds unbatched requests with exporter-level batching: size in items.
+          sizer: items
+          queue_size: 10000
+          batch:
+            enabled: true
+            sizer: items
+            min_size: 512        # was batch processor `send_batch_size`
+            max_size: 1024       # was `send_batch_max_size`
+            flush_timeout: 5s    # was `timeout`
 
     service:
       extensions:
@@ -135,7 +140,7 @@ spec:
       pipelines:
         logs:
           receivers: [filelog]
-          processors: [memory_limiter, batch]
+          processors: [memory_limiter]
           exporters: [otlp/gateway]
       telemetry:
         logs:

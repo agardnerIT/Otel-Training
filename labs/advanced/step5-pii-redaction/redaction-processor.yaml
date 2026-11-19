@@ -7,7 +7,7 @@
 #   1. redaction            — masks PII that lands in log ATTRIBUTES (structured fields).
 #   2. transform/pii        — masks PII embedded in the free-text log BODY via regex.
 #
-# Wire into the logs pipeline only, after k8sattributes/resource, before batch. Composed
+# Wire into the logs pipeline only, after k8sattributes/resource, before the exporter. Composed
 # result: labs/advanced/gateway-advanced.yaml.
 
 processors:
@@ -33,4 +33,4 @@ processors:
           - replace_pattern(body, "\\b\\d{3}-\\d{2}-\\d{4}\\b", "***SSN_REDACTED***")
 
 # Pipeline wiring (logs pipeline only):
-#   logs: [memory_limiter, k8sattributes, resource/costcenter, redaction, transform/pii, batch]
+#   logs: [memory_limiter, k8sattributes, resource/costcenter, redaction, transform/pii]

@@ -212,6 +212,12 @@ processors:
     # ... transform statements
 ```
 
+> **Note (batch deprecation):** the `batch` processor shown in this historical hackathon
+> config is now **deprecated** (removal planned for Collector `v0.177.0`). In the current training
+> configs, drop it from `processors:`/pipelines and enable `sending_queue.batch` on the
+> exporter instead (see `observability/collectors/gateway.yaml`). The ordering lesson below
+> (enrich → transform → export, `memory_limiter` first) is unchanged.
+
 #### Correct Order (Canonical: enrichment → filtering → aggregation → routing → export):
 ```yaml
 processors:
