@@ -8,13 +8,14 @@
 #   make up-direct  same, but deploy the casino directly (no GitOps; debug path)
 #   make reset      tear down app/obs/dt/gitops, keep the kind cluster
 #   make verify     re-run the component verify/validate scripts + M0 banner
+#   make dco-setup  enable the DCO sign-off git hook (.githooks/) for this clone
 #   make help       list targets
 
 ORCH := .devcontainer/bootstrap/deploy-environment.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: up up-direct reset verify help
+.PHONY: up up-direct reset verify dco-setup help
 
 up: ## Bring up the full training environment (GitOps path)
 	bash $(ORCH)
@@ -27,6 +28,10 @@ reset: ## Tear down app/obs/dt/gitops (keep the cluster)
 
 verify: ## Re-run verification + print the M0 env-check banner
 	bash $(ORCH)
+
+dco-setup: ## Enable the DCO sign-off git hook (auto Signed-off-by on every commit)
+	git config core.hooksPath .githooks
+	@echo "DCO hook enabled (core.hooksPath=.githooks). Ensure git user.name/user.email are set."
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \

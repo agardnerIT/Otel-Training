@@ -13,6 +13,12 @@ TIMING_FILE="$HOME/.otel-training-coldstart.txt"
 
 log() { echo "==> $*"; }
 
+# Enable the DCO sign-off hook (.githooks/prepare-commit-msg) so every commit made
+# in the codespace carries a Signed-off-by trailer (the upstream repo enforces DCO).
+# Non-fatal: a missing git identity or a non-git checkout must not block bring-up.
+log "enabling DCO sign-off git hook"
+git config core.hooksPath .githooks 2>/dev/null || log "WARN: could not set core.hooksPath (non-fatal); run 'make dco-setup' later."
+
 log "verifying toolchain (self-heal if needed)"
 bash "$SCRIPT_DIR/install-tools.sh"
 
