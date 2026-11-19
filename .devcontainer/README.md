@@ -37,10 +37,17 @@ summary below must agree with it.
 | Variable | Purpose |
 |----------|---------|
 | `DT_TENANT` | Dynatrace tenant URL (e.g. `https://abc12345.live.dynatrace.com`) — serves both the operator (`/api`) and OTLP collectors (`/api/v2/otlp`) |
-| `DT_OPERATOR_TOKEN` | operator / ActiveGate API token — classic `dt0c01`, operator scopes → DynaKube `apiToken` (renamed from `DT_API_TOKEN`, still accepted as a deprecated fallback) |
-| `DT_INGEST_TOKEN` | OTLP data-ingest token — classic `dt0c01`; two consumers, the collectors **and** the operator `dataIngestToken` |
-| `DT_PLATFORM_TOKEN` | platform token `dt0s16` used **only** by `dtctl` (optional; separate from `DT_OPERATOR_TOKEN`) |
-| `DT_PLATFORM_URL` | *(optional)* Gen3 SaaS apps URL for `dtctl` (`https://<id>.apps.dynatrace.com`); derivable from `DT_TENANT` |
+| `DT_OPERATOR_TOKEN` | operator / ActiveGate token — **platform token `dt0s16`** (`fleet-management:*` + `settings:objects:*`) → DynaKube `apiToken` (renamed from `DT_API_TOKEN`, still accepted as a deprecated fallback) |
+| `DT_INGEST_TOKEN` | OTLP data-ingest token — **platform token `dt0s16`** (`openpipeline:*:ingest` + `storage:metrics:write`); two consumers, the collectors **and** the operator `dataIngestToken` |
+| `DT_PLATFORM_TOKEN` | platform token `dt0s16` used **only** by `dtctl` (**optional** — dtctl labs only; separate scope set from `DT_OPERATOR_TOKEN`) |
+| `DT_PLATFORM_URL` | *(optional)* Gen3 SaaS apps URL for `dtctl` (`https://<id>.apps.dynatrace.com`); derived from `DT_TENANT` (`live` → `apps`) when unset |
+
+> **All three `DT_*` tokens are platform tokens (`dt0s16`), not classic `dt0c01`.**
+> This is a Gen3 tenant and the Operator (≥ 1.10.0) accepts platform tokens in the
+> `apiToken` / `dataIngestToken` Secret keys. They are **not** interchangeable —
+> each carries a different scope set (see the canonical
+> [setup.md table](../../docs-site/setup.md#environment-variables) and
+> [`deploy/dynatrace/README.md`](../../deploy/dynatrace/README.md#token-scopes-least-privilege)).
 | `PARTICIPANT_ID` | **unique per attendee** — names the kind cluster, `k8s.cluster.name`, and DynaKube; drives `service.name` isolation. DNS-label-safe (lowercase alphanumeric + `-`). Blank → `otel-training` |
 | `KIND_CLUSTER_NAME` | advanced override — set to name the cluster directly; wins over `PARTICIPANT_ID`. Normally unset |
 | `WORKSHOP_DISPENSER_URL` / `WORKSHOP_ROOM_PASSWORD` | *(advanced track, opencode)* LLM dispenser — **not** Dynatrace tokens (ISI-7138) |

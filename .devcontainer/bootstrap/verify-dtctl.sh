@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# verify-dtctl.sh — prove the Dynatrace platform CLI is installed and runnable
-# in the attendee codespace (ISI-7175, ISI-7169·B1).
+# verify-dtctl.sh — prove the Dynatrace platform CLI is installed, runnable, and
+# (when a platform token is present) actually AUTHENTICATED in the attendee
+# codespace (ISI-7175, ISI-7169·B1, ISI-7630 #60).
 #
 # install-tools.sh installs dtctl, but its download is deliberately NON-fatal
 # (a region/network hiccup must not break the rest of the toolchain). That means
@@ -8,12 +9,19 @@
 # the Dynatrace-for-AI skills (B2/B3) that depend on the CLI fail. This check
 # surfaces that immediately, right after bootstrap, as a first-class gate.
 #
-# It is intentionally small and cluster-independent (dtctl is a local CLI): it
-# only proves the binary is on PATH and that `dtctl version` exits cleanly.
+# It runs in two tiers:
+#   * ALWAYS: prove the binary is on PATH and `dtctl version` exits cleanly
+#     (cluster-independent, no secrets needed).
+#   * WHEN DT_PLATFORM_TOKEN is set: a real LIVE auth call. DT_PLATFORM_TOKEN is
+#     optional (only the dtctl labs need it), so its absence is a SKIP, not a
+#     failure — but when present, a bad token / missing scope must fail loudly
+#     here rather than mid-lab. The platform URL is taken from DT_PLATFORM_URL,
+#     or DERIVED from DT_TENANT (<id>.live... -> <id>.apps...).
 #
 # Exit codes:
-#   0  dtctl present and `dtctl version` succeeded
-#   1  dtctl missing from PATH, or `dtctl version` failed
+#   0  dtctl present + `dtctl version` ok; AND (auth skipped OR auth succeeded)
+#   1  dtctl missing / `dtctl version` failed; OR DT_PLATFORM_TOKEN set but the
+#      live auth call failed (bad token, missing scope, wrong URL)
 #
 # Version drift (installed != pinned) is a WARNING, not a failure — a custom
 # DTCTL_DOWNLOAD_URL / DTCTL_VERSION=latest is a supported override.
@@ -26,6 +34,19 @@ bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[1;33m!\033[0m %s\n' "$*" >&2; }
 bad()  { printf '  \033[1;31m✗\033[0m %s\n' "$*" >&2; }
+
+# derive_platform_url — the canonical DT_PLATFORM_URL-from-DT_TENANT rule
+# (docs-site/setup.md: "derived from DT_TENANT when unset"). On Gen3 SaaS the
+# tenant base is <id>.live.dynatrace.com (operator + OTLP) while dtctl talks to
+# the apps host <id>.apps.dynatrace.com. The only transform is live -> apps,
+# so this also handles the *.dynatracelabs.com dev hosts. Echoes the derived
+# URL, or nothing if DT_TENANT can't be mapped.
+derive_platform_url() {
+  local tenant="${1%/}"
+  if [[ "$tenant" == *.live.* ]]; then
+    printf '%s\n' "${tenant/.live./.apps.}"
+  fi
+}
 
 bold "== dtctl verify (pinned ${DTCTL_VERSION}) =="
 
@@ -68,5 +89,73 @@ else
   warn "reported version does not contain the pin '${want}' — override or drift (non-fatal)"
 fi
 
-bold "RESULT: dtctl OK"
-exit 0
+# 4. LIVE authentication check (only when a platform token is provided).
+# DT_PLATFORM_TOKEN is OPTIONAL (dtctl labs only), so no token = clean skip.
+DT_PLATFORM_TOKEN="${DT_PLATFORM_TOKEN:-}"
+DT_PLATFORM_URL="${DT_PLATFORM_URL:-}"
+DT_TENANT="${DT_TENANT:-}"
+
+if [[ -z "$DT_PLATFORM_TOKEN" ]]; then
+  warn "DT_PLATFORM_TOKEN not set — skipping live auth (dtctl labs are optional)"
+  bold "RESULT: dtctl OK (binary only; auth skipped)"
+  exit 0
+fi
+
+# Resolve the apps URL: explicit DT_PLATFORM_URL wins; else derive from DT_TENANT.
+url="$DT_PLATFORM_URL"
+if [[ -z "$url" ]]; then
+  url="$(derive_platform_url "$DT_TENANT")"
+  if [[ -n "$url" ]]; then
+    ok "derived DT_PLATFORM_URL from DT_TENANT: ${url}"
+  fi
+fi
+if [[ "$url" != https://* ]]; then
+  bad "DT_PLATFORM_TOKEN is set but no usable platform URL"
+  cat >&2 <<EOF
+
+  dtctl needs the apps host (https://<id>.apps.dynatrace.com). Either:
+    - set DT_PLATFORM_URL explicitly, or
+    - set DT_TENANT to the tenant base (https://<id>.live.dynatrace.com) so it
+      can be derived (live -> apps).
+EOF
+  exit 1
+fi
+
+bold "4. live auth check -> ${url}"
+# Build an EPHEMERAL dtctl config so we never touch the attendee's real
+# ~/.config/dtctl/config. doctor's "Authentication" check is a real call to the
+# platform metadata API, so a bad token (401) or missing scope (403) fails here.
+CFG="$(mktemp -t dtctl-verify.XXXXXX.yaml)"
+trap 'rm -f "$CFG"' EXIT
+dctl() { dtctl --config "$CFG" --no-agent --plain "$@"; }
+
+if ! dctl config set-credentials verify-token --token "$DT_PLATFORM_TOKEN" >/dev/null 2>&1 \
+  || ! dctl config set-context verify --environment "$url" --token-ref verify-token \
+        --safety-level readonly >/dev/null 2>&1 \
+  || ! dctl config use-context verify >/dev/null 2>&1; then
+  bad "could not stage an ephemeral dtctl context (unexpected dtctl error)"
+  exit 1
+fi
+
+# `dtctl doctor` runs: version, config, context, token retrieval, CONNECTIVITY,
+# and AUTHENTICATION (user identity). Any FAIL => non-zero. Filter the resty
+# retry noise but keep the check lines.
+if doctor_out="$(dctl doctor --context verify 2>&1)"; then
+  printf '%s\n' "$doctor_out" | grep -E '^\[(OK|FAIL)\]' | sed 's/^/      /'
+  ok "dtctl authenticated against the tenant"
+  bold "RESULT: dtctl OK (authenticated)"
+  exit 0
+else
+  printf '%s\n' "$doctor_out" | grep -E '^\[(OK|FAIL)\]' | sed 's/^/      /' >&2
+  bad "dtctl could NOT authenticate against ${url}"
+  cat >&2 <<EOF
+
+  The platform CLI is installed but DT_PLATFORM_TOKEN does not work against the
+  tenant. Common causes:
+    - token invalid / truncated / not a platform token (dt0s16)
+    - token lacks the dtctl scopes (see docs-site/setup.md "DT_PLATFORM_TOKEN")
+    - wrong platform URL — check DT_PLATFORM_URL / DT_TENANT (apps vs live host)
+  Re-run after fixing:  bash .devcontainer/bootstrap/verify-dtctl.sh
+EOF
+  exit 1
+fi
