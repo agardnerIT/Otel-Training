@@ -170,13 +170,43 @@ if [[ "$CASINO_PROFILE" == "lite" ]]; then
     warn "CASINO_PROFILE=lite but $LITE_FILTER not found — seeding the FULL manifest set"
   fi
 fi
+# Casino app SOURCE + in-cluster CI workflow (ISI-7641 / WS-B). The seeded repo
+# is meant to be the attendee's editable casino monorepo, not just manifests:
+# pushing an edit under apps/casino/** makes Gitea Actions (the WS-A runner,
+# ISI-7639) build the 7 deployed images and push them to the Gitea container registry
+# (gitea.local:30001/casino/vegasapp-*), which the WS-C IMAGE_SOURCE=gitea render
+# (ISI-7640) then deploys — the "edit code -> CI -> redeploy" loop the casino
+# README promises, with no ghcr.io dependency. Argo still syncs path `k8s` only;
+# apps/casino + .gitea/workflows are additive and invisible to the sync.
+# Default ON; set SEED_CASINO_SOURCE=false to seed manifests only (lean repo).
+SEED_CASINO_SOURCE="${SEED_CASINO_SOURCE:-true}"
+if [[ "$SEED_CASINO_SOURCE" == "true" ]]; then
+  if [[ -d "$REPO_ROOT/apps/casino" && -f "$REPO_ROOT/.gitea/workflows/casino-images.yml" ]]; then
+    log "seeding casino app source + .gitea CI workflow (ISI-7641) so a push builds images in-cluster"
+    mkdir -p "$WORK/apps" "$WORK/.gitea/workflows" "$WORK/deploy/casino"
+    # cp honours apps/casino/.dockerignore-style hygiene implicitly: the tree is
+    # source-only (no node_modules/target), so this is a few MB.
+    cp -r "$REPO_ROOT/apps/casino" "$WORK/apps/casino"
+    cp "$REPO_ROOT/.gitea/workflows/casino-images.yml" "$WORK/.gitea/workflows/casino-images.yml"
+    # Carry IMAGE_VERSION too — the workflow tags images with it (same SSoT the
+    # WS-C render pins the manifests to), so CI's tag matches Argo's tag.
+    [[ -f "$REPO_ROOT/deploy/casino/IMAGE_VERSION" ]] \
+      && cp "$REPO_ROOT/deploy/casino/IMAGE_VERSION" "$WORK/deploy/casino/IMAGE_VERSION"
+  else
+    warn "SEED_CASINO_SOURCE=true but apps/casino or .gitea/workflows/casino-images.yml is missing — seeding manifests only; the in-cluster CI lab (ISI-7641) will be unavailable"
+  fi
+fi
 (
   cd "$WORK"
   git init -q -b main
   git config user.email "$GITEA_ADMIN_EMAIL"
   git config user.name "$GITEA_ADMIN_USER"
   git add .
-  git commit -q -m "Seed casino manifests (source of truth: ISI-6794)"
+  # `[skip ci]` keeps this bootstrap seed push from kicking off 8 in-cluster
+  # image builds (D1: the CI loop is opt-in, not bootstrap-blocking — ISI-7624).
+  # Gitea's default SKIP_WORKFLOW_STRINGS includes `[skip ci]`; an attendee's own
+  # later edit+push is a normal commit and DOES trigger the build.
+  git commit -q -m "Seed casino manifests + app source (ISI-6794, ISI-7641) [skip ci]"
   # Retry the push — on a slow codespace the org/repo create above may still be
   # settling the first time around (ISI-7555). Idempotent (force-push to main).
   pushed=0

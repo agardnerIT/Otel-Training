@@ -1,0 +1,123 @@
+name: Build casino images (Gitea CI)
+
+# In-cluster CI for the casino app (ISI-7641 / WS-B, parent plan ISI-7624).
+#
+# This is the Gitea-Actions port of .github/workflows/casino-images.yml. It runs
+# on the in-cluster Gitea Actions runner (ISI-7639 / WS-A) and pushes the 7
+# deployed casino service images to the Gitea container registry via the WS-D alias
+# (ISI-7638):  gitea.local:30001/casino/vegasapp-<svc>:<tag>  — byte-identical to
+# the ref node containerd pulls back, and the exact ref the WS-C Gitea render
+# (`IMAGE_SOURCE=gitea`, ISI-7640) deploys. Together they close the attendee
+# "edit code -> CI builds image -> redeploy" loop with NO dependency on ghcr.io.
+#
+# This file is seeded INTO the casino/casino Gitea repo by gitops/install/
+# seed-gitea.sh, alongside apps/casino/ (the build context) and
+# deploy/casino/IMAGE_VERSION (the tag source of truth). The GHCR GitHub Actions
+# workflow is kept as the maintainer reference-image path (do NOT delete it).
+#
+# D1 (opt-in, not bootstrap-blocking): the seed push that first lands this file
+# carries a `[skip ci]` commit marker, so bringing the environment up does NOT
+# kick off 7 in-cluster builds on the 8 GB codespace. The lab is triggered when
+# an attendee edits a service and pushes a normal commit (or runs it manually).
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/casino/**"
+      - ".gitea/workflows/casino-images.yml"
+  workflow_dispatch:
+
+env:
+  # WS-D registry alias (ISI-7638). dind on the runner trusts it as insecure and
+  # resolves it to the kind node NodePort via the pod hostAlias; node containerd
+  # resolves the same name, so push and pull are identical strings.
+  REGISTRY: gitea.local:30001
+  # Gitea packages owner/org — CASINO_ORG in seed-gitea.sh (ISI-6796).
+  OWNER: casino
+  # The runner's dind build daemon (gitea-act-runner sidecar, tcp:2375 on the
+  # shared pod netns). act_runner does not propagate this into the job container,
+  # so set it explicitly here (ISI-7639 config: network=host, DOCKER_HOST=2375).
+  DOCKER_HOST: tcp://localhost:2375
+
+jobs:
+  build:
+    name: ${{ matrix.service }}
+    # Maps to the runner's "ubuntu-latest:docker://node:20-bookworm" label
+    # (ISI-7639). Jobs start from node:20-bookworm so JS actions (checkout) run;
+    # the docker client is added below since that base image ships none.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The 7 services the training topology actually deploys. `gateway` is
+        # intentionally excluded — exactly as .github/workflows/casino-images.yml
+        # excludes it (ISI-7625 D3): nothing in deploy/casino/k8s references a
+        # vegasapp-gateway image, and the WS-C IMAGE_SOURCE=gitea render only
+        # rewrites the deployed vegasapp-* refs, so a gateway image would never be
+        # pulled. Building it here would only burn an in-cluster build on the 8 GB
+        # ceiling. If gateway ever enters the deployed topology, re-add it here AND
+        # add a manifest — don't re-add it on its own.
+        service:
+          - frontend
+          - slots
+          - blackjack
+          - dashboard
+          - roulette
+          - dice
+          - scoring
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # node:20-bookworm has no docker client. Install the Debian docker.io
+      # package (client + deps); we only use the client, which talks to the dind
+      # sidecar over $DOCKER_HOST. Kept simple and self-contained — no buildx,
+      # no QEMU: single-arch (linux/amd64) builds only (D1 / 8 GB ceiling).
+      - name: Install docker client
+        run: |
+          set -eux
+          if ! command -v docker >/dev/null 2>&1; then
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends docker.io
+          fi
+          docker version
+
+      # Tag = deploy/casino/IMAGE_VERSION — the SAME single source of truth the
+      # WS-C render (deploy/casino/render-images.sh) pins the manifests to, so the
+      # tag CI publishes always matches the tag Argo CD deploys. Fall back to
+      # :latest only if the file is absent (older seed layout).
+      - name: Resolve image tag
+        id: tag
+        run: |
+          set -eu
+          TAG=latest
+          if [ -r deploy/casino/IMAGE_VERSION ]; then
+            TAG="$(tr -d '[:space:]' < deploy/casino/IMAGE_VERSION)"
+          fi
+          echo "value=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building vegasapp-${{ matrix.service }} as $REGISTRY/$OWNER/vegasapp-${{ matrix.service }}:$TAG"
+
+      # Gitea injects a per-job token scoped to the triggering actor's rights.
+      # The actor (seeded admin 'attendee', owner of the casino org) can write the
+      # org's container packages. Login against the same Gitea instance the alias
+      # points at. D3: packages are public-read, so PULLs need no secret — only
+      # this push path authenticates.
+      - name: Log in to the Gitea container registry
+        run: |
+          echo "${{ secrets.GITEA_TOKEN }}" \
+            | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push
+        run: |
+          set -eux
+          IMG="$REGISTRY/$OWNER/vegasapp-${{ matrix.service }}"
+          TAG="${{ steps.tag.outputs.value }}"
+          docker build \
+            --file "apps/casino/${{ matrix.service }}/Dockerfile" \
+            --tag "$IMG:$TAG" \
+            --tag "$IMG:latest" \
+            apps/casino
+          docker push "$IMG:$TAG"
+          docker push "$IMG:latest"
