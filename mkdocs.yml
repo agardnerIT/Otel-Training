@@ -7,6 +7,13 @@ site_dir: site
 
 theme:
   name: material
+  # ISI-7632 (#59): clickable-to-enlarge Mermaid diagrams are wired in through a
+  # custom_dir template override (overrides/main.html injects the zoom <link>/
+  # <script>), NOT via extra_javascript. mkdocs-mermaid2 1.2.x treats any
+  # extra_javascript entry whose basename contains "mermaid" as the library
+  # override and then skips the real runtime (diagrams silently fail), so the
+  # override path is the only mermaid2-safe way to add the lightbox.
+  custom_dir: overrides
   palette:
     - scheme: default
       primary: deep purple
