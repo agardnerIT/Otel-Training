@@ -24,6 +24,8 @@ to build:
 | [B5 — Structure unstructured logs (OTTL)](catalog-b5-ottl-log-structuring.md) | metrics / collector | **25m** | **med** | `otel-collector` + `otel-ottl` | Parse opaque casino log lines into typed `casino.*` attributes + severity with OTTL `ExtractPatterns` — make text queryable. |
 | [B6 — Metric temporality (`cumulativetodelta`)](catalog-b6-cumulativetodelta.md) | metrics / collector | **20m** | **med** | `otel-collector` | Make the gateway's `cumulativetodelta` explicit + targeted; learn cumulative vs delta and why Dynatrace prefers delta for rate / SLO math. |
 | [C1 — Build a dashboard via dtctl](catalog-c1-dtctl-dashboard.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Turn your Step-2 business metrics into a live, version-controlled Dynatrace dashboard — as code. |
+| [C2 — Define a reliability SLO via dtctl](catalog-c2-slo.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Turn a money-path metric into a commitment: a platform SLO with a 99% target, an error budget, and a burn rate — as code. |
+| [C3 — Metric event / Davis alert via dtctl](catalog-c3-metric-davis-alert.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Put a Davis alert on the money-path error rate, then prove it fires by breaking a dependency in a controlled scenario. |
 | [C4 — Dynatrace cost centers](catalog-c4-dynatrace-cost-center.md) | Dynatrace automation | **20m** | **med** | `dtctl` + `dt-app-dashboards` | Allocate ingest back to the team / game — showback & chargeback DQL over the `dt.cost.costcenter` tag from **B2**, plus an optional cost dashboard. |
 
 !!! tip "Prerequisites"
@@ -32,9 +34,10 @@ to build:
     (`opencode debug skill` lists `otel-*` and `dtctl`). **A2**, **A3**, **A4**
     and **A5** build on the span pattern from
     [Step 1](step-1-instrument-with-agents.md) (**A5** also spans the slots →
-    scoring hop from [A1](catalog-a1-broken-trace.md)); **C1** builds on the
-    metrics from [Step 2](step-2-business-metrics.md) and the RED metrics from
-    [B1](catalog-b1-spanmetrics.md). **B2 → C4** are a **pair** — B2 stamps the
-    `dt.cost.costcenter` tag at the gateway, C4 allocates/reports on it in Dynatrace;
-    do **B2 first**. Both build on the cost-allocation intro in
-    [Step 4](step-4-cost-of-observability.md).
+    scoring hop from [A1](catalog-a1-broken-trace.md)); **C1**, **C2** and **C3**
+    build on the metrics from [Step 2](step-2-business-metrics.md) and the RED
+    metrics from [B1](catalog-b1-spanmetrics.md) (**C2** → **C3** form a
+    reliability pair: the SLO budget, then the Davis alert that pages on a spike).
+    **B2 → C4** are a **pair** — B2 stamps the `dt.cost.costcenter` tag at the
+    gateway, C4 allocates/reports on it in Dynatrace; do **B2 first**. Both build
+    on the cost-allocation intro in [Step 4](step-4-cost-of-observability.md).

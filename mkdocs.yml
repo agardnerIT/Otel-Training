@@ -96,6 +96,8 @@ nav:
           - "B5 — Structure logs (OTTL) [25m][med]": advanced/catalog-b5-ottl-log-structuring.md
           - "B6 — Metric temporality (delta) [20m][med]": advanced/catalog-b6-cumulativetodelta.md
           - "C1 — Dashboard via dtctl [20m][med]": advanced/catalog-c1-dtctl-dashboard.md
+          - "C2 — Reliability SLO via dtctl [20m][med]": advanced/catalog-c2-slo.md
+          - "C3 — Metric event / Davis alert [20m][med]": advanced/catalog-c3-metric-davis-alert.md
           - "C4 — Dynatrace cost centers [20m][med]": advanced/catalog-c4-dynatrace-cost-center.md
 
 plugins:

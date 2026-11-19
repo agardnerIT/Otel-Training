@@ -158,3 +158,58 @@ timeseries bets = sum(casino.bets.count), from: now() - 1h, interval: 1m
 - **After (delta):** each 1-minute bucket is the bets **in that minute** — a clean
   rate for charts, alerts, and SLO burn, with no restart cliff. Same holds for
   `sum(casino.payout.total)`.
+
+---
+
+## Catalog C2 — Reliability SLO (availability)
+
+SLI DQL (the `customSli.indicator` — must yield a field named `sli`):
+
+```dql
+timeseries {
+  total = sum(casino.red.calls),
+  good  = sum(casino.red.calls, filter: { status.code != "ERROR" })
+},
+filter: { span.name == "casino.slots.spin" }, from: now() - 7d
+| fieldsAdd sli = (good[] / total[]) * 100
+| summarize availability = avg(arrayAvg(sli))
+| fieldsAdd budget_spent_pct = (100 - availability) / (100 - 99.0) * 100
+```
+
+- **Before:** no SLO — the money-path has a dashboard number but no target or
+  error budget.
+- **After:** `availability` sits near/above the 99.0 target; `budget_spent_pct`
+  shows how much of the 1% budget is consumed. The SLO renders a 7-day status +
+  burn in **Dynatrace → SLOs** (`${PARTICIPANT_ID}-money-path-availability`), and
+  `dtctl get slos --filter "name~'${PARTICIPANT_ID}'"` lists it.
+- `status.code` error value may be `ERROR` or `STATUS_CODE_ERROR` depending on how
+  the spanmetrics connector's dimension is captured — adjust the filter to the
+  tenant's captured value (same caveat as the Step sections above).
+
+---
+
+## Catalog C3 — Metric event / Davis alert (money-path error rate)
+
+Error-count signal the alert watches:
+
+```dql
+timeseries errors = sum(casino.red.calls, filter: { status.code == "ERROR" }),
+  filter: { span.name == "casino.slots.spin" }, from: now() - 30m, interval: 1m
+```
+
+Controlled scenario (prove it fires, then recovers):
+
+```bash
+kubectl -n casino scale deploy/vegas-casino-scoring --replicas=0   # induce errors
+kubectl -n casino scale deploy/vegas-casino-scoring --replicas=1   # recover
+```
+
+- **Before:** `errors` is ~0/min; no Davis problem. The SLO budget would drain
+  silently on a real spike with no page.
+- **After (controlled scenario):** `errors` climbs above the threshold (5/min)
+  for ≥ 3 of 5 minutes; a **`Casino money-path error rate`** Davis problem opens
+  in **Dynatrace → Problems**, then **auto-closes** after the de-alert window once
+  scoring is back. `dtctl get settings --schema
+  builtin:anomaly-detection.metric-events` lists the alert.
+- Errors surface as ERROR spans most reliably once the **Catalog A4**
+  exception/ERROR-status recording is in place.
