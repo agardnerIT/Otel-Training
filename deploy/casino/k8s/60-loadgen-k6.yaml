@@ -54,7 +54,7 @@ spec:
               exit 0
       containers:
         - name: k6
-          image: "ghcr.io/henrikrexed/vegasapp-k6:0.39"
+          image: "ghcr.io/${IMAGE_OWNER}/otel-training/vegasapp-k6:${IMAGE_TAG}"
           imagePullPolicy: IfNotPresent
           env:
             - name: CASINO_URL

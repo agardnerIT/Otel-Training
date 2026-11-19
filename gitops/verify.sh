@@ -221,6 +221,15 @@ if [[ -d "$EXPECTED_SRC" ]]; then
   [[ "$missing" -eq 0 ]] \
     && pass "every canonical manifest is present in the synced repo (k8s/)" \
     || fail "$missing canonical manifest(s) not found in the repo — reseed (seed-gitea.sh)"
+  # Image placeholders must be RESOLVED in the seeded repo (ISI-7587). A literal
+  # ${IMAGE_OWNER}/${IMAGE_TAG} reaching Argo CD is InvalidImageName and the pods
+  # never pull — a failure the filename check above cannot see. seed-gitea.sh
+  # renders via render-images.sh; this asserts that actually happened.
+  if grep -rqE '\$\{IMAGE_OWNER\}|\$\{IMAGE_TAG\}' "$WORK/k8s"/*.yaml 2>/dev/null; then
+    fail "unresolved image placeholder(s) in seeded manifests — seed-gitea.sh did not render (InvalidImageName risk)"
+  else
+    pass "seeded manifests carry concrete image refs (no \${IMAGE_OWNER}/\${IMAGE_TAG} placeholders)"
+  fi
 else
   info "canonical manifests dir $EXPECTED_SRC absent on this branch — skipping file match"
 fi

@@ -132,7 +132,22 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 log "pushing manifests from $CASINO_MANIFESTS_DIR"
 mkdir -p "$WORK/k8s"
-cp -r "$CASINO_MANIFESTS_DIR"/. "$WORK/k8s/"
+# Resolve the ${IMAGE_OWNER}/${IMAGE_TAG} image placeholders (ISI-7587) to
+# concrete values BEFORE pushing, so Argo CD syncs valid image refs instead of
+# literal "${IMAGE_OWNER}" (which would be InvalidImageName). This is the single
+# seed-time substitution point (plain-text sed, no kustomize — preserves the
+# ISI-6794 plain-YAML + Argo decision). Baseline defaults (upstream owner,
+# :latest) come from render-images.sh; c3 (ISI-7589) exports IMAGE_OWNER derived
+# from the fork origin + adds a tag preflight ahead of this call. Fall back to a
+# raw copy only if the renderer is absent (older placeholder-free manifests).
+RENDER="$REPO_ROOT/deploy/casino/render-images.sh"
+if [[ -f "$RENDER" ]]; then
+  log "rendering image owner/tag (IMAGE_OWNER=${IMAGE_OWNER:-henrikrexed} IMAGE_TAG=${IMAGE_TAG:-latest})"
+  SRC_DIR="$CASINO_MANIFESTS_DIR" bash "$RENDER" -o "$WORK/k8s"
+else
+  warn "render-images.sh not found — copying manifests verbatim (image placeholders will NOT be resolved)"
+  cp -r "$CASINO_MANIFESTS_DIR"/. "$WORK/k8s/"
+fi
 (
   cd "$WORK"
   git init -q -b main

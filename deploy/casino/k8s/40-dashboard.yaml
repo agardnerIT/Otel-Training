@@ -40,7 +40,7 @@ spec:
               drop: ["ALL"]
             readOnlyRootFilesystem: false
             allowPrivilegeEscalation: false
-          image: "ghcr.io/henrikrexed/vegasapp-dashboard:0.39"
+          image: "ghcr.io/${IMAGE_OWNER}/otel-training/vegasapp-dashboard:${IMAGE_TAG}"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

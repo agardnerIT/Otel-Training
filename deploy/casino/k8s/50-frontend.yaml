@@ -52,7 +52,7 @@ spec:
               drop: ["ALL"]
             readOnlyRootFilesystem: false
             allowPrivilegeEscalation: false
-          image: "ghcr.io/henrikrexed/vegasapp-frontend:0.39"
+          image: "ghcr.io/${IMAGE_OWNER}/otel-training/vegasapp-frontend:${IMAGE_TAG}"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

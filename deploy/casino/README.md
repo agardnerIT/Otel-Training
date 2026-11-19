@@ -59,36 +59,57 @@ source of truth** the GitOps path (ISI-6796) consumes — Argo CD syncs
   kgateway CRD dependency the training cluster doesn't install. The frontend is
   reachable in-cluster via its ClusterIP Service (AC satisfied); humans
   port-forward it.
-- **Images:** `ghcr.io/henrikrexed/vegasapp-<service>:0.39` (the training build
-  from ISI-6789). The image registry/tag is the one knob to confirm against
-  whatever ISI-6789 actually publishes — if that build lands on a different tag,
-  bump it in each `k8s/*.yaml` (`image:` line).
+- **Images:** `ghcr.io/${IMAGE_OWNER}/otel-training/vegasapp-<service>:${IMAGE_TAG}`,
+  built and published by CI (`.github/workflows/casino-images.yml`, ISI-7587).
+  The `image:` lines carry `${IMAGE_OWNER}`/`${IMAGE_TAG}` **placeholders**; the
+  deploy path resolves them with `render-images.sh` (see below) so a fork can
+  repoint images at its own GHCR namespace. Baseline defaults:
+  `IMAGE_OWNER=henrikrexed`, `IMAGE_TAG=latest`.
 - **Resource sizing** is tuned for the shared kind node: ~650m CPU / ~1.5 Gi of
   memory *requests* across the whole app, leaving headroom for the collectors
   and operators that share the cluster.
 
-## Image pulls (ISI-7585)
+## Image owner substitution (ISI-7587 / c3 ISI-7589)
 
-The `vegasapp-*` packages live in the **private** `ghcr.io/henrikrexed`
-namespace, so a fresh codespace hits `403 Forbidden` → `ImagePullBackOff`. Two
-supported fixes (approved plan ISI-7577 §4 Track 1, decision **D2**):
+The manifest `image:` lines are templated with `${IMAGE_OWNER}`/`${IMAGE_TAG}`.
+They are resolved by **plain-text substitution** (no kustomize, preserving the
+ISI-6794 plain-YAML + Argo decision) via `render-images.sh`:
 
-- **Preferred (D2 default) — make the packages public.** A one-time GitHub
-  account-owner toggle on the 8 `vegasapp-*` packages. After that, anonymous
-  pulls work everywhere with **no secret distribution** and nothing else to run.
-  This needs the GHCR owner (BigBoss); the fine-grained workshop `GITHUB_PAT`
-  has no `read:packages` on these packages, so it cannot flip visibility.
-- **In-repo fallback — a pull secret.** `gitops/install/ensure-casino-pull-secret.sh`
-  (wired into `bootstrap-gitops.sh` before the casino Application is created)
+```bash
+# Render with the upstream baseline (defaults):
+bash deploy/casino/render-images.sh -o /tmp/casino-rendered
+# Render pointing at a fork's own build:
+IMAGE_OWNER=alice IMAGE_TAG=latest bash deploy/casino/render-images.sh -o /tmp/casino-rendered
+```
+
+The seed/deploy path (ISI-7589 c3) derives `IMAGE_OWNER` from the fork's git
+origin (same pattern as `PARTICIPANT_ID`, defaulting to the upstream owner) and
+renders at seed time before Argo CD syncs. First launch needs **no** pre-build:
+the manifests default to the upstream **baseline** public images.
+
+## Image pulls — baseline public + fork pull secret
+
+The casino images are built by CI to `ghcr.io/<owner>/otel-training/vegasapp-<svc>`
+(ISI-7587). GHCR packages are **private on first publish**, so two things make
+the pull work:
+
+- **Baseline (upstream repo) = public.** A one-time GitHub account-owner toggle
+  makes each `otel-training/vegasapp-*` package **Public** (the workflow prints
+  the exact step in its run summary). After that, anonymous pulls work
+  everywhere with no secret distribution, and later pushes stay public. Owner
+  action — the fine-grained workshop `GITHUB_PAT` cannot flip visibility and
+  there is no REST API for user-namespace container visibility.
+- **Fork build = private → pull secret.** An attendee's own build lands in their
+  GHCR namespace and may be private. `gitops/install/ensure-casino-pull-secret.sh`
   creates a `ghcr-pull` docker-registry Secret in the `casino` namespace from a
-  **package-read** token. Set `CASINO_PULL_TOKEN` to a token with
-  `read:packages` on `henrikrexed/vegasapp-*`; the default attendee `GITHUB_PAT`
-  does **not** qualify (verified: authenticated manifest pull returns 404). The
-  `vegas-casino` ServiceAccount already references `ghcr-pull`, so every pod
-  uses it. When no token is set, the script is a no-op and assumes public images.
+  `read:packages` token (`CASINO_PULL_TOKEN`). The `vegas-casino` ServiceAccount
+  already references `ghcr-pull`, so every pod uses it. No token set → no-op,
+  assumes public images.
 
-This is a **stopgap**. Track 2 (ISI-7577 c1–c4) replaces it by publishing
-public baseline images from this repo.
+> **k6 loadgen** (`60-loadgen-k6.yaml`) references `vegasapp-k6`, which is **not**
+> vendored under `apps/casino/` and therefore not built by the workflow. It is
+> templated for owner/tag consistency but has no CI-published baseline yet —
+> vendoring + build-matrix coverage is a c1/c4 follow-up (ISI-7586 / ISI-7588).
 
 ## Planted defects
 
