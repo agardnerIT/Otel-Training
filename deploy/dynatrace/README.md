@@ -135,6 +135,46 @@ the OTel collectors' OTLP exporter **and** the operator `dataIngestToken`):
 > Kubernetes-monitoring mode and kept out to stay least-privilege on a shared
 > tenant.
 
+### Copy-pasteable IAM policy (ingest token's user)
+
+A platform token can only carry scopes its **creating user** already holds, so
+the user that mints `DT_INGEST_TOKEN` must have these permissions bound. In
+**Account Management → Identity & access management → Policies**, create a policy
+with this statement and bind it to that user (or the training group), then mint
+the token with the same scopes checked:
+
+```text
+ALLOW openpipeline:traces:ingest,
+      openpipeline:metrics:ingest,
+      openpipeline:logs:ingest,
+      openpipeline:events:ingest,
+      storage:metrics:write;
+```
+
+> **Propagation delay (1–2 min).** After you (re)mint the token or change the
+> policy, allow **1–2 minutes** for Dynatrace to propagate the new permissions
+> before the token will ingest. A token tested immediately can 403 purely
+> because the grant has not propagated yet — wait and re-check rather than
+> re-minting.
+
+### Verify the ingest path is actually working (no-data detection)
+
+A wrong/under-scoped ingest token does **not** break the cluster — the collectors
+run, but every OTLP batch is silently rejected and **no data** reaches the
+tenant. Make that failure loud:
+
+```bash
+bash observability/check-ingest.sh
+```
+
+It POSTs one real test span to `<DT_TENANT>/api/v2/otlp/v1/traces` with
+`DT_INGEST_TOKEN` and **fails loudly on 401 / 403 / 404** (invalid token /
+missing scope / wrong `DT_TENANT`), then scans the gateway collector log for
+export errors. `deploy-environment.sh` runs it automatically in its verify phase
+when the DT secrets are present (see
+[`docs-site/setup.md`](../../docs-site/setup.md#environment-variables)). Remember
+the same 1–2 min delay applies before an accepted span is *queryable*.
+
 ## Uninstall
 
 ```bash

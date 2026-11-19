@@ -414,6 +414,14 @@ run_verify() { # name, script, [extra env assignments...]
 run_verify dtctl "$SCRIPT_DIR/verify-dtctl.sh"
 # Observability has an OFFLINE validator (validate.sh) — always meaningful.
 run_verify observability "$REPO_ROOT/observability/validate.sh"
+# No-data detection (ISI-7630 #70): a LIVE ingest probe — only when the tenant
+# secrets are present (otherwise there is nothing to export to). Fails loudly on
+# 401/403/404 so a broken/under-scoped DT_INGEST_TOKEN surfaces here, not as a
+# silent "no data" mystery during M3/M5.
+if [[ -n "$DT_READY" ]]; then
+  run_verify ingest "$REPO_ROOT/observability/check-ingest.sh" \
+    env "DT_TENANT=$DT_TENANT" "DT_INGEST_TOKEN=$DT_INGEST_TOKEN"
+fi
 # Gateway API exposure (ISI-6795): verify.sh self-selects offline/live.
 run_verify gateway "$REPO_ROOT/deploy/gateway/verify.sh"
 # Dynatrace verify only when the phase actually ran.

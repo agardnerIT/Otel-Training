@@ -69,7 +69,7 @@ at the repo root mirrors it — if anything disagrees, this table wins.
 | `DT_TENANT` | Tenant base URL (`https://<id>.live.dynatrace.com`) | Operator (`<DT_TENANT>/api`) **and** OTel collectors (`<DT_TENANT>/api/v2/otlp`) — one URL, two uses | Required for all Dynatrace labs |
 | `DT_OPERATOR_TOKEN` | **Platform token** (`dt0s16`), `fleet-management:*` + `settings:objects:*` scopes | Dynatrace Operator → DynaKube `apiToken` (`deploy/dynatrace/install.sh`) | Required for K8s monitoring (M4) |
 | `DT_INGEST_TOKEN` | **Platform token** (`dt0s16`), `openpipeline:{traces,metrics,logs,events}:ingest` + `storage:metrics:write` | **Two** consumers: OTel collectors' OTLP exporter (`Bearer` header) **and** operator `dataIngestToken` | Required for telemetry export (M3/M5) |
-| `DT_PLATFORM_TOKEN` | Platform token (`dt0s16`) | `dtctl` **only** — never the operator | Optional (dtctl labs) |
+| `DT_PLATFORM_TOKEN` | Platform token (`dt0s16`), scopes below | `dtctl` **only** — never the operator | **Optional** — dtctl labs only; everything else works without it |
 | `DT_PLATFORM_URL` | Gen3 SaaS apps URL (`https://<id>.apps.dynatrace.com`) | `dtctl` on Gen3 SaaS | Optional — derived from `DT_TENANT` when unset |
 | `PARTICIPANT_ID` | DNS-label-safe id | kind cluster name, `k8s.cluster.name`, DynaKube name | Required (blank → `otel-training`, collides in a class) |
 | `KIND_CLUSTER_NAME` | cluster name | advanced override; wins over `PARTICIPANT_ID` | Optional |
@@ -84,6 +84,39 @@ at the repo root mirrors it — if anything disagrees, this table wins.
     The old single `DT_API_TOKEN` is a deprecated alias for `DT_OPERATOR_TOKEN`
     only. (The Dynatrace **Operator ≥ 1.10.0** is what accepts platform tokens in
     the `apiToken`/`dataIngestToken` Secret keys; `install.sh` pins `1.11.1`.)
+
+### `DT_PLATFORM_TOKEN` — scopes, user permissions, and whether you need it
+
+`DT_PLATFORM_TOKEN` is **optional**. It is used by **`dtctl` only** (the advanced
+catalog's dtctl labs — DQL, SLOs, dashboards, alerts). The whole M0–M5 path and
+every non-dtctl lab work without it, so skip it unless you are running those labs.
+
+When you do mint it, it is a **platform token (`dt0s16`)** with this **minimum
+scope set** — least-privilege for the dtctl labs (read Grail + manage settings
+and documents), nothing more:
+
+| Scope | Why `dtctl` needs it |
+|---|---|
+| `storage:buckets:read` | list Grail buckets for DQL |
+| `storage:logs:read` · `storage:metrics:read` · `storage:spans:read` · `storage:events:read` · `storage:bizevents:read` · `storage:entities:read` | `dtctl query` / `dtctl exec` over each data kind |
+| `settings:objects:read` · `settings:objects:write` | create/read SLOs and metric/Davis alerts (catalog C2/C3) |
+| `document:documents:read` · `document:documents:write` | create/read dashboards & notebooks (catalog C1) |
+
+!!! warning "The token's **user** must already hold these permissions"
+    A Dynatrace platform token can only carry scopes its **creating user**
+    already has. If your account lacks (say) `settings:objects:write`, a token
+    you mint with that scope checked will still be refused it, and the dtctl
+    SLO/alert labs will 403. So the same permissions above must be bound to your
+    user in **Account Management → Identity & access management → Policies**
+    before you mint the token. On a shared training tenant the facilitator
+    normally does this for you.
+
+`dtctl` talks to the **apps** host (`https://<id>.apps.dynatrace.com`), not the
+`live` tenant base. Set `DT_PLATFORM_URL` to it explicitly, or leave it blank and
+it is **derived from `DT_TENANT`** (`<id>.live.…` → `<id>.apps.…`).
+`bash .devcontainer/bootstrap/verify-dtctl.sh` does this derivation and makes a
+live authenticated call, so a bad token or missing scope fails there, loudly,
+instead of mid-lab.
 
 Two variables below are **not** Dynatrace tokens — they belong to the advanced
 track's `opencode` LLM dispenser (unrelated to the DT tenant):
