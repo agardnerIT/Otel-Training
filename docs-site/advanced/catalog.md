@@ -18,11 +18,13 @@ to build:
 | [A4 — Exceptions / span-events](catalog-a4-exceptions-span-events.md) | traces | **20m** | **med** | `otel-instrumentation` | Record exceptions as span events (`exception.type` / `.message` / `.stacktrace`) + ERROR status instead of swallowing them — a failing money-path stops looking green. |
 | [A5 — Baggage propagation (`player.tier`)](catalog-a5-baggage-propagation.md) | traces | **25m** | **med** | `otel-instrumentation` | Set `player.tier` into baggage upstream in slots and read it downstream in scoring, so one DQL slices by a tier scoring never looked up. |
 | [B1 — RED metrics from spans](catalog-b1-spanmetrics.md) | metrics / collector | **20m** | **med** | `otel-collector` | Add the `spanmetrics` connector to the gateway and chart Rate / Errors / Duration — no app-code change. |
+| [B2 — Cost-center tagging](catalog-b2-cost-center.md) | metrics / collector | **20m** | **med** | `otel-collector` + `otel-ottl` | Derive `dt.cost.costcenter` from each signal's own namespace / service with a `transform` processor — attribute **all** ingest (traces, metrics, logs) to the right team. Pairs with **C4**. |
 | [B3 — Drop noise (filter processor)](catalog-b3-filter-drop-noise.md) | metrics / collector | **15m** | **easy** | `otel-collector` | Drop health-check / `/metrics` spans at the gateway — verify the ingest drop with no signal loss. |
 | [B4 — OTTL enrichment (`casino.bet.tier`)](catalog-b4-ottl-enrichment.md) | metrics / collector | **20m** | **med** | `otel-collector` + `otel-ottl` | Derive a bounded bet-tier bucket from the raw bet amount with a `transform` processor — bucket a high-cardinality number so you can slice by it. |
 | [B5 — Structure unstructured logs (OTTL)](catalog-b5-ottl-log-structuring.md) | metrics / collector | **25m** | **med** | `otel-collector` + `otel-ottl` | Parse opaque casino log lines into typed `casino.*` attributes + severity with OTTL `ExtractPatterns` — make text queryable. |
 | [B6 — Metric temporality (`cumulativetodelta`)](catalog-b6-cumulativetodelta.md) | metrics / collector | **20m** | **med** | `otel-collector` | Make the gateway's `cumulativetodelta` explicit + targeted; learn cumulative vs delta and why Dynatrace prefers delta for rate / SLO math. |
 | [C1 — Build a dashboard via dtctl](catalog-c1-dtctl-dashboard.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Turn your Step-2 business metrics into a live, version-controlled Dynatrace dashboard — as code. |
+| [C4 — Dynatrace cost centers](catalog-c4-dynatrace-cost-center.md) | Dynatrace automation | **20m** | **med** | `dtctl` + `dt-app-dashboards` | Allocate ingest back to the team / game — showback & chargeback DQL over the `dt.cost.costcenter` tag from **B2**, plus an optional cost dashboard. |
 
 !!! tip "Prerequisites"
     All assume the base environment is up and
@@ -32,4 +34,7 @@ to build:
     [Step 1](step-1-instrument-with-agents.md) (**A5** also spans the slots →
     scoring hop from [A1](catalog-a1-broken-trace.md)); **C1** builds on the
     metrics from [Step 2](step-2-business-metrics.md) and the RED metrics from
-    [B1](catalog-b1-spanmetrics.md).
+    [B1](catalog-b1-spanmetrics.md). **B2 → C4** are a **pair** — B2 stamps the
+    `dt.cost.costcenter` tag at the gateway, C4 allocates/reports on it in Dynatrace;
+    do **B2 first**. Both build on the cost-allocation intro in
+    [Step 4](step-4-cost-of-observability.md).

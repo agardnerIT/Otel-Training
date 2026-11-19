@@ -90,11 +90,13 @@ nav:
           - "A4 — Exceptions / span-events [20m][med]": advanced/catalog-a4-exceptions-span-events.md
           - "A5 — Baggage propagation (player.tier) [25m][med]": advanced/catalog-a5-baggage-propagation.md
           - "B1 — RED metrics from spans [20m][med]": advanced/catalog-b1-spanmetrics.md
+          - "B2 — Cost-center tagging [20m][med]": advanced/catalog-b2-cost-center.md
           - "B3 — Drop noise (filter) [15m][easy]": advanced/catalog-b3-filter-drop-noise.md
           - "B4 — OTTL enrichment (bet.tier) [20m][med]": advanced/catalog-b4-ottl-enrichment.md
           - "B5 — Structure logs (OTTL) [25m][med]": advanced/catalog-b5-ottl-log-structuring.md
           - "B6 — Metric temporality (delta) [20m][med]": advanced/catalog-b6-cumulativetodelta.md
           - "C1 — Dashboard via dtctl [20m][med]": advanced/catalog-c1-dtctl-dashboard.md
+          - "C4 — Dynatrace cost centers [20m][med]": advanced/catalog-c4-dynatrace-cost-center.md
 
 plugins:
   - search
