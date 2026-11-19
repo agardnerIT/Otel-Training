@@ -54,11 +54,11 @@ connectors:
 service:
   pipelines:
     traces:
-      exporters: [otlphttp/dynatrace, spanmetrics]   # feed the connector too
+      exporters: [otlp_http/dynatrace, spanmetrics]   # feed the connector too
     metrics/spanmetrics:
       receivers: [spanmetrics]
       processors: [memory_limiter]            # invariants hold here
-      exporters: [otlphttp/dynatrace]
+      exporters: [otlp_http/dynatrace]
 ```
 
 RED maps to: `casino.red.calls` (rate), the same metric split by

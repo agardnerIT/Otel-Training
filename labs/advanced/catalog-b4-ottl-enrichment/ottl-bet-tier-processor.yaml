@@ -39,4 +39,4 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, k8sattributes, transform/bet_tier, batch]
-      exporters: [otlphttp/dynatrace]
+      exporters: [otlp_http/dynatrace]

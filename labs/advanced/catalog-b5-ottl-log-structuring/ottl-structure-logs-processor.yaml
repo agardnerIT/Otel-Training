@@ -64,4 +64,4 @@ service:
     logs:
       receivers: [otlp]
       processors: [memory_limiter, k8sattributes, transform/structure_logs, batch]
-      exporters: [otlphttp/dynatrace]
+      exporters: [otlp_http/dynatrace]

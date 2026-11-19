@@ -16,7 +16,7 @@ nodes (kind)                          observability namespace
 └──────────────────────────┘          │  → k8sattributes                   │
                                       │  → cumulativetodelta (metrics)     │
    apps / auto-instrumentation ─────► │  (exporter batching)               │
-                                      │  otlphttp ──► Dynatrace tenant     │
+                                      │  otlp_http ──► Dynatrace tenant     │
                                       └────────────────────────────────────┘
 ```
 
@@ -103,7 +103,7 @@ Both CRs are also schema-checked against the operator's `v1beta1` CRD.
   real collector crash-loops with *"expected type 'bool', got unconvertible
   type 'string'"* (caught live in ISI-6806). Bool fields must be literals;
   only string fields take env expansion.
-- **`otlphttp` not `otlp`** for Dynatrace: the ingest endpoint carries a path
+- **`otlp_http` not `otlp`** for Dynatrace: the ingest endpoint carries a path
   (`/api/v2/otlp`); the gRPC exporter rejects path-bearing endpoints at
   validation time. The collector appends `/v1/{traces,metrics,logs}`.
 - **Go regex forbids dots in named captures** — the DaemonSet path parser

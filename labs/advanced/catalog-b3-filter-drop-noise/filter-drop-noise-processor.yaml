@@ -41,4 +41,4 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, k8sattributes, filter/drop_noise]
-      exporters: [otlphttp/dynatrace]
+      exporters: [otlp_http/dynatrace]

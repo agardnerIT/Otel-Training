@@ -112,10 +112,10 @@ spec:
       # batching is configured on the exporter (`sending_queue.batch`) below.
 
     exporters:
-      # otlphttp (not gRPC otlp): Dynatrace's OTLP ingest is an HTTP endpoint
+      # otlp_http (not gRPC otlp): Dynatrace's OTLP ingest is an HTTP endpoint
       # with a path (`/api/v2/otlp`), and the collector appends
       # /v1/{traces,metrics,logs} to this base endpoint.
-      otlphttp/dynatrace:
+      otlp_http/dynatrace:
         endpoint: ${env:DT_TENANT}/api/v2/otlp
         headers:
           # DT_INGEST_TOKEN is a PLATFORM token (dt0s16) on this Gen3 tenant, so
@@ -158,15 +158,15 @@ spec:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, k8sattributes]
-          exporters: [otlphttp/dynatrace]
+          exporters: [otlp_http/dynatrace]
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, k8sattributes, cumulativetodelta]
-          exporters: [otlphttp/dynatrace]
+          exporters: [otlp_http/dynatrace]
         logs:
           receivers: [otlp]
           processors: [memory_limiter, k8sattributes]
-          exporters: [otlphttp/dynatrace]
+          exporters: [otlp_http/dynatrace]
       telemetry:
         logs:
           level: info

@@ -128,11 +128,11 @@ Wire both sides — traces export into it, metrics read from it:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, k8sattributes, filter/noise, tail_sampling]
-          exporters: [otlphttp/dynatrace, spanmetrics]
+          exporters: [otlp_http/dynatrace, spanmetrics]
         metrics:
           receivers: [otlp, spanmetrics]
           processors: [memory_limiter, k8sattributes, transform/drop_player_id, cumulativetodelta]
-          exporters: [otlphttp/dynatrace]
+          exporters: [otlp_http/dynatrace]
 ```
 
 *(If you skipped the M3 stretch, your metrics processors simply will not have
@@ -148,7 +148,10 @@ kubectl -n observability logs deploy/otel-gateway-collector --tail=20
 ```
 
 No restart loops, no config-rejected lines in the log — then give it 5
-minutes and re-measure in Dynatrace (same window as the baseline):
+minutes and re-measure in Dynatrace (same window as the baseline). Transient
+`Exporting failed. Will retry.` lines are **benign** (the queue resends them);
+only `Dropping data` or an HTTP `4xx` is an actual export failure — see
+[Troubleshooting → reading the collector log](troubleshooting.md#reading-the-collector-log-what-is-actually-a-failure).
 
 - [ ] trace count (target: roughly 10–20% of baseline): ______
 - [ ] ERROR traces (target: ~unchanged from baseline): ______
