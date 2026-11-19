@@ -140,10 +140,16 @@ mkdir -p "$WORK/k8s"
 # :latest) come from render-images.sh; c3 (ISI-7589) exports IMAGE_OWNER derived
 # from the fork origin + adds a tag preflight ahead of this call. Fall back to a
 # raw copy only if the renderer is absent (older placeholder-free manifests).
+# Per-attendee cluster name baked into the seeded manifests (ISI-7654 / D1): the
+# live kind cluster name ($KIND_CLUSTER_NAME == $PARTICIPANT_ID) becomes
+# K8S_CLUSTER_NAME + the k8s.cluster.name resource attribute on every service, so
+# a shared Dynatrace tenant can be filtered per participant. Resolved the same way
+# as create-cluster.sh / deploy-environment.sh; defaults to otel-training.
+CLUSTER_NAME="${CLUSTER_NAME:-${KIND_CLUSTER_NAME:-${PARTICIPANT_ID:-otel-training}}}"
 RENDER="$REPO_ROOT/deploy/casino/render-images.sh"
 if [[ -f "$RENDER" ]]; then
-  log "rendering image owner/tag (IMAGE_OWNER=${IMAGE_OWNER:-henrikrexed} IMAGE_TAG=${IMAGE_TAG:-$(tr -d '[:space:]' < "$REPO_ROOT/deploy/casino/IMAGE_VERSION" 2>/dev/null || echo latest)})"
-  SRC_DIR="$CASINO_MANIFESTS_DIR" bash "$RENDER" -o "$WORK/k8s"
+  log "rendering image owner/tag + cluster name (IMAGE_OWNER=${IMAGE_OWNER:-henrikrexed} IMAGE_TAG=${IMAGE_TAG:-$(tr -d '[:space:]' < "$REPO_ROOT/deploy/casino/IMAGE_VERSION" 2>/dev/null || echo latest)} CLUSTER_NAME=${CLUSTER_NAME})"
+  SRC_DIR="$CASINO_MANIFESTS_DIR" CLUSTER_NAME="$CLUSTER_NAME" bash "$RENDER" -o "$WORK/k8s"
 else
   warn "render-images.sh not found — copying manifests verbatim (image placeholders will NOT be resolved)"
   cp -r "$CASINO_MANIFESTS_DIR"/. "$WORK/k8s/"

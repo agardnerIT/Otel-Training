@@ -357,7 +357,9 @@ else
       # Fail CLOSED: if the render fails, do NOT fall back to the raw sources —
       # those still carry ${IMAGE_OWNER}/${IMAGE_TAG} and applying them is
       # InvalidImageName (ISI-7617 review). Skip the apply and flag a hard fail.
-      SRC_DIR="$REPO_ROOT/deploy/casino/k8s" bash "$RENDER" -o "$APPLY_DIR" || RENDER_OK=0
+      # CLUSTER_NAME bakes the per-attendee k8s.cluster.name into the applied
+      # manifests (ISI-7654 / D1), matching the GitOps seed path.
+      SRC_DIR="$REPO_ROOT/deploy/casino/k8s" CLUSTER_NAME="$KIND_CLUSTER_NAME" bash "$RENDER" -o "$APPLY_DIR" || RENDER_OK=0
     fi
     if [[ "$RENDER_OK" -ne 1 ]]; then
       warn "render-images.sh failed — refusing to apply unrendered placeholder manifests (InvalidImageName)"

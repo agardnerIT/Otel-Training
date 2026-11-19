@@ -23,6 +23,11 @@ func initTelemetry(serviceName string, serviceMetadata map[string]string) (*sdkt
 			semconv.ServiceVersionKey.String(getEnv("SERVICE_VERSION", serviceMetadata["version"])),
 			semconv.ServiceInstanceIDKey.String(getEnv("SERVICE_INSTANCE_ID", serviceName+"-"+os.Getenv("HOSTNAME"))),
 			semconv.DeploymentEnvironmentKey.String(getEnv("DEPLOYMENT_ENVIRONMENT", "production")),
+			// Per-attendee cluster name for per-participant filtering on a shared
+			// tenant (ISI-7654 / D1). The Node services pick this up from
+			// OTEL_RESOURCE_ATTRIBUTES via the env detector; the Go resource is
+			// built explicitly (no WithFromEnv), so read the injected env var here.
+			attribute.String("k8s.cluster.name", getEnv("K8S_CLUSTER_NAME", "otel-training")),
 			// Game attributes
 			attribute.String("game.category", getEnv("GAME_CATEGORY", serviceMetadata["gameCategory"])),
 			attribute.String("game.type", getEnv("GAME_TYPE", serviceMetadata["gameType"])),

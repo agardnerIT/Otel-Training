@@ -65,7 +65,7 @@ spec:
                   name: vegas-casino-config
                   key: OTEL_SERVICE_VERSION
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.name=vegas-roulette-service,service.version=2.1.0,service.namespace=vegas-casino,deployment.environment=production,application.name=Vegas-Casino-table-games,game.category=table-games,game.complexity=high,game.max_payout=36x,game.type=european-roulette,game.owner=Table-Games-Division"
+              value: "service.name=vegas-roulette-service,service.version=2.1.0,service.namespace=vegas-casino,deployment.environment=production,application.name=Vegas-Casino-table-games,game.category=table-games,game.complexity=high,game.max_payout=36x,game.type=european-roulette,game.owner=Table-Games-Division,k8s.cluster.name=${CLUSTER_NAME}"
             - name: DEPLOYMENT_ENVIRONMENT
               valueFrom:
                 configMapKeyRef:

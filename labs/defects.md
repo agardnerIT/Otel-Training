@@ -177,6 +177,18 @@ spec:
 **Module**: M3 - Collector as Control Point  
 **Status**: ⚠️ PARTIALLY CONFIRMED - Memory Limiter Present, Order May Need Adjustment
 
+> **Re-scoped enrichment (ISI-7654 / D1).** The M3 `resource` processor below used
+> to insert `k8s.cluster.name = ${CLUSTERNAME}` as *the* central enrichment the
+> attendee adds. That attribute is now baked into every service from **M1** — the
+> casino ConfigMap's `K8S_CLUSTER_NAME` is rendered to the live per-attendee kind
+> cluster name at deploy time (`deploy/casino/render-images.sh`), so each service
+> already emits `k8s.cluster.name` and attendees filter their own data on a shared
+> tenant with `filter k8s.cluster.name == "<PARTICIPANT_ID>"`. To keep the M1
+> baseline and this M3 lab clearly separate, the enrichment here is re-scoped to
+> **`k8s.cluster.uid`** — a cluster-identity attribute the SDK does *not* provide,
+> so centrally adding it in the collector is still the "aha." (`k8s.cluster.name`
+> must NOT be the M3 enrichment anymore; that would be redundant with M1.)
+
 #### Files Affected:
 - `/mnt/nas/projects/Perform-Hackathon-2026/codespace/manifests/otel-collector-statefulset-config.yaml` - Lines 138-255
 
@@ -192,10 +204,10 @@ processors:
     limit_percentage: 70
     spike_limit_percentage: 30
   cumulative_to_delta: {}
-  k8sattributes/k8S:  # ❌ Naming inconsistency
+  k8sattributes/k8S:  # ❌ Naming inconsistency (duplicate of the processor below)
     extract:
       metadata:
-        - k8s.cluster.uid
+        - k8s.pod.uid
   k8sattributes:  # ✅ Good for Kubernetes enrichment
     extract:
       metadata:
@@ -204,8 +216,8 @@ processors:
         # ... more attributes
   resource:  # ✅ Good resource attributes
     attributes:
-      - key: k8s.cluster.name
-        value: ${CLUSTERNAME}
+      - key: k8s.cluster.uid
+        value: ${CLUSTER_UID}
         action: insert
   transform:  # ❌ Should come after enrichment
     error_mode: ignore

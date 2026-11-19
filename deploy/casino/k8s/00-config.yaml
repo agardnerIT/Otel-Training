@@ -53,7 +53,12 @@ data:
   OTEL_SERVICE_VERSION: "2.1.0"
   DEPLOYMENT_ENVIRONMENT: "production"
   SERVICE_NAMESPACE: "vegas-casino"
-  K8S_CLUSTER_NAME: "otel-training"
+  # Per-attendee cluster name. Rendered at seed/deploy time from the live kind
+  # cluster name ($KIND_CLUSTER_NAME == $PARTICIPANT_ID) by render-images.sh so
+  # every attendee's telemetry carries a unique k8s.cluster.name and a shared
+  # Dynatrace tenant can be filtered per participant (ISI-7654 / D1). The
+  # placeholder defaults to "otel-training" when rendered without a cluster name.
+  K8S_CLUSTER_NAME: "${CLUSTER_NAME}"
   # Service ports
   SLOTS_PORT: "8081"
   ROULETTE_PORT: "8082"

@@ -63,7 +63,7 @@ spec:
                   name: vegas-casino-config
                   key: OTEL_SERVICE_VERSION
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.name=vegas-dice-service,service.version=2.1.0,service.namespace=vegas-casino,deployment.environment=production,application.name=Vegas-Casino-dice-games,game.category=dice-games,game.complexity=medium,game.max_payout=2x,game.type=craps-dice,game.owner=Dice-Games-Division"
+              value: "service.name=vegas-dice-service,service.version=2.1.0,service.namespace=vegas-casino,deployment.environment=production,application.name=Vegas-Casino-dice-games,game.category=dice-games,game.complexity=medium,game.max_payout=2x,game.type=craps-dice,game.owner=Dice-Games-Division,k8s.cluster.name=${CLUSTER_NAME}"
             - name: DEPLOYMENT_ENVIRONMENT
               valueFrom:
                 configMapKeyRef:
