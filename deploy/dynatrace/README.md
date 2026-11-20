@@ -220,6 +220,27 @@ deploy/dynatrace/
   A `ScopeMissing` condition or a `401/403` pull error ⇒ fix the token scopes;
   `manifest unknown` ⇒ arch/tag; `timeout`/`dial` ⇒ egress to the tenant registry.
 
+- **`<name>-activegate-0` 404 / `NotFound` pulling `…/linux/activegate:<ver>-raw …
+  not found`** (ISI-7673). Distinct from the 401/403 case above: here the pull
+  reaches the **tenant** registry (`<env>.live.dynatrace.com` /
+  `*.dynatracelabs.com`) but gets a bare **404**. The Dynatrace tenant registry
+  returns **404 to an *unauthorized* pull**, so a 404 on a tenant-registry host
+  almost always means `DT_OPERATOR_TOKEN` is a **classic `dt0c01`** token (or a
+  platform token **missing `fleet-management:container-images:read`**). Classic
+  tokens auth the API during migration — enough to resolve the registry host — but
+  **cannot** carry that IAM scope, so the image pull specifically 404s. Fix: mint
+  a **platform token (`dt0s16`)** with the 3 required scopes
+  (`fleet-management:activegate.connection-info:read`,
+  `fleet-management:activegate.tokens:create`,
+  `fleet-management:container-images:read`) under **Account Management → Identity
+  & access management → Platform tokens**, set `DT_OPERATOR_TOKEN`, and re-run.
+  `install.sh`/`verify.sh` now **reject a `dt0c01` operator token up front** with
+  this exact recipe, so you should never reach the 404 — but an existing wedged
+  pod is cleared by re-running `install.sh` (it restarts the AG StatefulSet). A
+  404 on a **public** registry (`public.ecr.aws`/`docker.io`) is the *other*
+  cause — a genuine manifest/arch miss — so check the registry host in the pull
+  message before blaming the token.
+
 ## Notes / follow-ups
 
 - **API version pin:** `dynakube.yaml` uses `dynatrace.com/v1beta6`, the DynaKube
