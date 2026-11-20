@@ -49,6 +49,7 @@ metadata:
     # without a manual settings step. (Default-on in recent operators; set
     # explicitly so behaviour is obvious and stable across versions.)
     feature.dynatrace.com/automatic-kubernetes-api-monitoring: "true"
+    feature.dynatrace.com/use-public-registry="true"
     # Per-attendee cluster NAME in Dynatrace Kubernetes API monitoring on the shared
     # tenant, so many attendees stay readable at once. This replaces the old
     # `networkZone` approach and matches the proven reference deployment. Rendered
