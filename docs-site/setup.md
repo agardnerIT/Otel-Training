@@ -241,8 +241,8 @@ bash gitops/bootstrap/bootstrap-gitops.sh
     neighbor's. Thanks to `PARTICIPANT_ID`, your telemetry carries
     `k8s.cluster.name == "<PARTICIPANT_ID>"` on every span, metric, and log.
 
-    Throughout M0–M1, replace `<PARTICIPANT_ID>` with your actual value (run
-    `echo $PARTICIPANT_ID` once) and keep this as the **first `filter` line** of
+    In the Dynatrace UI, replace `<PARTICIPANT_ID>` with your actual value (run
+    `echo $PARTICIPANT_ID` once; with `dtctl` the shell expands it for you, see below) and keep this as the **first `filter` line** of
     every query:
 
     ```dql
@@ -258,6 +258,18 @@ bash gitops/bootstrap/bootstrap-gitops.sh
     | filter k8s.cluster.name == "<PARTICIPANT_ID>"
     | summarize spans = count(), by: { service.name }
     | sort spans desc
+    ```
+
+    **Prefer the terminal?** `dtctl` runs the same DQL, and your shell already
+    has `PARTICIPANT_ID`, so there is nothing to paste or replace. Use double
+    quotes so the shell expands it (a cluster created without a
+    `PARTICIPANT_ID` is named `otel-training`, hence the default):
+
+    ```bash
+    dtctl query "fetch spans, from: now() - 30m
+    | filter k8s.cluster.name == \"${PARTICIPANT_ID:-otel-training}\"
+    | summarize spans = count(), by: { service.name }
+    | sort spans desc"
     ```
 
     **What you should see:** your casino services — `vegas-frontend-service`,
