@@ -97,35 +97,91 @@ ignored.
     Every other service uses the default (`tracecontext,baggage`), which is
     why they stay connected.
 
-## The fix
+## The fix — drive it with opencode, ship it through Gitea
 
-Configuration lives in Git, not in the running cluster. Fix it where the
-manifest lives:
+You do not hand-edit the manifest in the Gitea web UI. You drive the **opencode**
+coding agent to make the change, review its diff, and ship it as a **pull request
+on the in-cluster Gitea** — then Argo CD syncs the merged `main`. This is the same
+**Problem → Opencode → Verify** loop the [advanced track](advanced/environment.md#the-agent-loop-problem-opencode-verify)
+uses on every step; you will repeat it in M2–M4.
 
-1. Open Gitea (http://localhost:30001), repo `casino/casino`.
-2. Open `30-slots.yaml` and find the env block of the slots container:
+!!! note "One-time setup — clone the casino repo for opencode"
+    Do this **once** per Codespace (it is the same setup M0 wires up, and the
+    advanced track's [environment page](advanced/environment.md#the-lab-mechanic-opencode-pr-merge-sync)).
+    The helper scripts are already on your `PATH`:
 
-    ```yaml
-    # Slots still correlates via the legacy in-house header from the 2021
-    # framework instead of W3C Trace Context
-    - name: OTEL_PROPAGATORS
-      value: "vegas-legacy"
+    ```bash
+    gitea-token.sh      # mint a scoped Gitea token -> ~/.workshop-gitea.env
+    clone-casino.sh     # clone casino/casino -> ~/casino, wire creds + the DCO hook
+    cd ~/casino && opencode
     ```
 
-3. Change the value to the W3C propagators:
+### ② Opencode — drive the fix
 
-    ```yaml
-    - name: OTEL_PROPAGATORS
-      value: "tracecontext,baggage"
-    ```
+Configuration lives in Git, not in the running cluster, so point the agent at the
+manifest in your clone. The prompt names the **goal**, the **target file**, and the
+**skill**:
 
-4. Commit the change (Gitea web editor: pencil icon → edit → commit).
+```bash
+opencode run "Using the otel-instrumentation skill: in k8s/30-slots.yaml, the \
+vegas-casino-slots container sets OTEL_PROPAGATORS to the proprietary \
+'vegas-legacy' value, which breaks W3C trace-context propagation from the \
+frontend. Change OTEL_PROPAGATORS to 'tracecontext,baggage' so slots joins the \
+caller's trace. Change nothing else."
+```
 
-Argo CD picks up the commit and rolls the slots deployment. Watch it:
+### ③ Review — read the diff
+
+In build mode opencode writes the change straight into `~/casino`. **Read the diff
+before you ship it.** The one line that must flip:
+
+```diff
+  # Slots still correlates via the legacy in-house header from the 2021
+  # framework instead of W3C Trace Context
+  - name: OTEL_PROPAGATORS
+-   value: "vegas-legacy"
++   value: "tracecontext,baggage"
+```
+
+!!! warning "If the agent gets it wrong — steer it back, don't hand-fix"
+    opencode is not deterministic. Reply with the specific correction rather than
+    editing by hand:
+
+    - **Edited the wrong service** (e.g. touched blackjack): *"revert that; the
+      only file to change is k8s/30-slots.yaml, the vegas-casino-slots container."*
+    - **Removed `baggage`** (`value: "tracecontext"`): *"keep both propagators:
+      the value must be exactly `tracecontext,baggage`."*
+    - **Invented a new env var** instead of editing the existing one: *"edit the
+      existing OTEL_PROPAGATORS value in place, do not add a second one."*
+
+    Re-run opencode with the correction — the verify checkpoint below tells you
+    when it is done.
+
+### ④ Apply — opencode → PR → merge → Argo CD sync
+
+The casino namespace is GitOps-owned (Argo CD `selfHeal` reverts any `kubectl`
+drift), so you ship the fix through **Gitea**. Let opencode run the git loop, or
+ship it by hand from inside `~/casino`:
+
+```bash
+# opencode can branch -> commit -> push -> PR itself; or do it by hand:
+gitea-pr.sh "fix(slots): use W3C tracecontext,baggage propagators"
+```
+
+`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+prints the PR URL. **Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`) — merging `main` is what triggers
+the rollout. Argo CD picks up the merged commit and rolls the slots deployment
+(hit **Refresh** in the Argo CD UI at `http://localhost:30002` to force it). Watch it:
 
 ```bash
 kubectl -n casino rollout status deploy/vegas-casino-slots
 ```
+
+!!! note "GitLab path"
+    If your room runs the external GitLab fork, the loop is identical — opencode
+    edits, you open and merge an **MR** on your fork, Argo CD syncs. See
+    [M0 §4](setup.md#4-open-the-gitops-loop).
 
 ## Dynatrace check
 
@@ -166,7 +222,8 @@ the slots span — no proprietary header, clean W3C parentage.
       (inject/extract format mismatch)
 - [ ] You can name the config surface that fixes it (`OTEL_PROPAGATORS` on the
       SDK, owned by the workload's manifest)
-- [ ] You fixed it via a Git commit, not a `kubectl` patch
+- [ ] You drove the fix with an `opencode run` prompt, reviewed the diff, and
+      shipped it as a **merged Gitea PR** — not a `kubectl` patch or a hand-edit
 - [ ] After the fix, the scoped DQL shows `reconnected` climbing and `orphaned`
       falling to ~0 — connected frontend → slots traces in Dynatrace
 

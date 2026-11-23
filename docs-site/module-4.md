@@ -37,7 +37,17 @@ This is the fidelity baseline. Every change below is judged against it.
 ## Step 2 — break it: naive head sampling
 
 If you sampled 10% at the head you would save ~90% of span ingest. Try it on
-one service. In Gitea, `33-blackjack.yaml`, add to the container env:
+one service — same opencode → Gitea PR loop as M1–M3. (Need the one-time clone?
+See the [setup in M1](module-1.md#the-fix-drive-it-with-opencode-ship-it-through-gitea).)
+
+```bash
+opencode run "Using the otel-instrumentation skill: in k8s/33-blackjack.yaml, \
+add head sampling to the vegas-casino-blackjack container env — \
+OTEL_TRACES_SAMPLER=parentbased_traceidratio and OTEL_TRACES_SAMPLER_ARG=0.1 \
+(10%). Change nothing else."
+```
+
+Review the diff (two env vars added):
 
 ```yaml
 - name: OTEL_TRACES_SAMPLER
@@ -46,7 +56,11 @@ one service. In Gitea, `33-blackjack.yaml`, add to the container env:
   value: "0.1"
 ```
 
-Commit, wait for the rollout, give it 5 minutes of traffic.
+Ship and merge the PR, then wait for the rollout and give it 5 minutes of traffic:
+
+```bash
+gitea-pr.sh "chore(blackjack): 10% head sampling (temporary, to be reverted)"
+```
 
 **What you should see in Dynatrace:** blackjack spans drop to roughly 10%.
 Now filter your view to `status = ERROR`: errors dropped to ~10% too. You
@@ -54,13 +68,44 @@ saved money and lost ~90% of your visibility into the exact requests you
 would be paged for. Keep that feeling — it is the entire argument for tail
 sampling.
 
-**Revert it now** (delete the two env vars, commit) so blackjack is honest
-again for the rest of the lab.
+**Revert it now** so blackjack is honest again for the rest of the lab — drive
+opencode to delete the two env vars and open a revert PR:
+
+```bash
+opencode run "In k8s/33-blackjack.yaml, remove the OTEL_TRACES_SAMPLER and \
+OTEL_TRACES_SAMPLER_ARG env vars from the vegas-casino-blackjack container, \
+restoring full head sampling."
+gitea-pr.sh "revert(blackjack): drop 10% head sampling"
+```
+
+Merge it; Argo CD rolls blackjack back to full-fidelity head sampling.
 
 ## Step 3 — build it: tail sampling on the gateway
 
 Sampling policy belongs at the aggregation tier where the whole trace is
-visible. In your Codespace repo, edit `observability/collectors/gateway.yaml`.
+visible — the gateway collector.
+
+!!! note "Collector fix — `kubectl apply`, not the Gitea PR loop"
+    `observability/collectors/gateway.yaml` is in the **training repo** and runs
+    in the Argo-unmanaged `observability` namespace, so you drive the edit with
+    opencode but **apply it with `kubectl apply`** (same split as M3's collector
+    backstop). The casino git loop is for app-code only.
+
+Drive the whole change with one opencode prompt (review the three target shapes
+in 3a–3c below before you apply):
+
+```bash
+opencode run "Using the otel-collector skill: in observability/collectors/ \
+gateway.yaml, (1) add a filter processor 'filter/noise' dropping spans whose \
+http.route is /health or /healthz, placed right after k8sattributes on the \
+traces pipeline; (2) add a 'tail_sampling' processor (decision_wait 10s, \
+num_traces 50000) with policies keep-errors (status_code ERROR), keep-slow \
+(latency > 500ms), and a 10% probabilistic baseline, last on the traces \
+pipeline; (3) add a 'spanmetrics' connector (histogram buckets 5ms..10s, \
+dimensions http.method + http.route, exemplars on), export traces into it and \
+read metrics from it. Keep memory_limiter first and do not add a batch \
+processor."
+```
 
 ### 3a. Drop health checks before buffering
 
@@ -140,6 +185,21 @@ Wire both sides — traces export into it, metrics read from it:
 
 ### 3d. Validate, apply, verify
 
+!!! warning "If the agent gets it wrong — steer it back, don't hand-fix"
+    - **Processor order wrong / `batch` added**: *"memory_limiter must stay the
+      first processor, there must be no batch processor, and tail_sampling must
+      be last on the traces pipeline."*
+    - **spanmetrics not wired both ways**: *"the traces pipeline must export into
+      the spanmetrics connector and the metrics pipeline must list it as a
+      receiver, or RED metrics won't survive sampling."*
+    - **Clobbered existing processors** (e.g. dropped `transform/drop_player_id`
+      from M3): *"keep every processor already in my pipelines; only add the
+      new ones in the stated positions."*
+
+    Re-run opencode with the correction, then re-validate.
+
+Review the diff, then apply the config-as-product discipline:
+
 ```bash
 bash observability/validate.sh
 kubectl apply -f observability/collectors/gateway.yaml
@@ -171,6 +231,9 @@ the corresponding traces no longer exist.
 ## Definition of done — M4
 
 - [ ] Baseline, naive-head, and tail-sampling measurements recorded
+- [ ] Head-sampling experiment driven with opencode and shipped (and reverted)
+      as Gitea PRs; the gateway tail-sampling change driven with opencode and
+      `kubectl apply`'d (collector, not the Gitea loop)
 - [ ] You can state your policy in one sentence ("all errors, all >500 ms,
       10% of the rest") and defend both what it saves (ingest) and what it
       costs (decision latency, collector memory, blind spots under threshold)
