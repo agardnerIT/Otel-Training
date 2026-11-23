@@ -155,13 +155,16 @@ it continue.
 ## ④ Review & apply
 
 Read the diffs against `after.slots-set-baggage.js` and
-`after.scoring-read-baggage.js`, then ship via GitOps:
+`after.scoring-read-baggage.js`, then ship them through **Gitea** from inside your
+casino clone (`~/casino`). Let opencode run the git loop, or do it by hand:
 
 ```bash
-git add . && git commit -m "feat(casino): propagate player.tier via baggage; scoring enriches spans from it"
-git push            # to your fork's main — Argo CD syncs both services
+gitea-pr.sh "feat(casino): propagate player.tier via baggage; scoring enriches spans from it"
 ```
 
+`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+prints the PR URL. **Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`) — Argo CD then syncs both services.
 Play a few spins as different tiers (set the `x-player-tier` header to
 `gold` / `silver` / `bronze`) so tiered spans flow through both services.
 
