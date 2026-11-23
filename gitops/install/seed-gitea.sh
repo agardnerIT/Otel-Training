@@ -208,6 +208,24 @@ if [[ "$SEED_CASINO_SOURCE" == "true" ]]; then
     # WS-C render pins the manifests to), so CI's tag matches Argo's tag.
     [[ -f "$REPO_ROOT/deploy/casino/IMAGE_VERSION" ]] \
       && cp "$REPO_ROOT/deploy/casino/IMAGE_VERSION" "$WORK/deploy/casino/IMAGE_VERSION"
+    # Weaver semantic-convention guard (ISI-7733 / plan ISI-7730). Seed the pinned
+    # Weaver registry + rego policy to semconv/ at the repo root and the Gitea
+    # Actions workflow alongside casino-images.yml, so a push that drifts the
+    # casino.* conventions (a camelCase rename, or a high-cardinality *.id metric
+    # dimension) is caught by `weaver registry check` on the SAME in-cluster runner
+    # (ISI-7639) — the "controlling OTel data" lab in step-3-weaver-pipeline.md.
+    # Source of truth for the registry is the labs asset; the GHCR GitHub Actions
+    # copy (labs/.../ci/weaver-check.yml) is kept as the maintainer reference.
+    WEAVER_SRC="$REPO_ROOT/labs/advanced/step2-weaver-semconv"
+    if [[ -d "$WEAVER_SRC/registry" && -f "$REPO_ROOT/.gitea/workflows/weaver-semconv.yml" ]]; then
+      log "seeding Weaver registry + semconv-check workflow (ISI-7733) so a push that drifts casino.* conventions fails in-cluster CI"
+      mkdir -p "$WORK/semconv"
+      cp -r "$WEAVER_SRC/registry"        "$WORK/semconv/registry"
+      cp -r "$WEAVER_SRC/weaver-policies" "$WORK/semconv/weaver-policies"
+      cp "$REPO_ROOT/.gitea/workflows/weaver-semconv.yml" "$WORK/.gitea/workflows/weaver-semconv.yml"
+    else
+      warn "Weaver assets ($WEAVER_SRC/registry or .gitea/workflows/weaver-semconv.yml) missing — skipping the Weaver semconv-check seed (ISI-7733); casino image CI still seeded"
+    fi
   else
     warn "SEED_CASINO_SOURCE=true but apps/casino or .gitea/workflows/casino-images.yml is missing — seeding manifests only; the in-cluster CI lab (ISI-7641) will be unavailable"
   fi

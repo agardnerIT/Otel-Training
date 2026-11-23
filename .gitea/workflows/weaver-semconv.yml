@@ -1,0 +1,109 @@
+name: Weaver semconv check (Gitea CI)
+
+# Controlling OTel data in the lab's REAL in-cluster CI (ISI-7733, plan ISI-7730).
+#
+# This is the Gitea-Actions port of labs/advanced/step2-weaver-semconv/ci/
+# weaver-check.yml (kept as the GHCR/GitHub maintainer reference). It runs the
+# OpenTelemetry Weaver registry check on the in-cluster Gitea Actions runner
+# (ISI-7639 / WS-A), so an attendee who drifts the casino.* conventions sees the
+# Actions tab go red and the merge blocked — the same runner that builds the
+# casino images (casino-images.yml).
+#
+# It guards TWO axes, both already encoded in the committed rego policy
+# (semconv/weaver-policies/casino_policies.rego — do NOT reinvent it):
+#   1. Breaking changes on core attributes — a camelCase rename of a casino.*
+#      attribute (e.g. casino.bet.amount -> casino.betAmount) fails the check.
+#   2. Expensive metrics — adding a high-cardinality *.id dimension (e.g.
+#      casino.round.id) to the casino.payout.total metric fails the check.
+#
+# This file is seeded INTO the casino/casino Gitea repo by gitops/install/
+# seed-gitea.sh, alongside casino-images.yml and the semconv/ registry tree. The
+# open-telemetry/weaver composite GitHub Action is intentionally NOT used (it is
+# unavailable on the in-cluster Gitea runner); instead Weaver runs via its PINNED
+# Docker image through the runner's dind daemon — the same pattern casino-images.yml
+# uses (node:20-bookworm base talking to DOCKER_HOST=tcp://localhost:2375).
+#
+# Non-blocking at bring-up: the seed push that first lands this file carries a
+# `[skip ci]` commit marker (seed-gitea.sh), so bringing the environment up does
+# NOT kick a check on the 8 GB codespace. The lab is triggered when an attendee
+# edits the registry / a casino service and pushes a normal commit, or runs it
+# manually (workflow_dispatch).
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "semconv/**"
+      - "apps/casino/**"
+      - ".gitea/workflows/weaver-semconv.yml"
+  pull_request:
+    paths:
+      - "semconv/**"
+      - "apps/casino/**"
+      - ".gitea/workflows/weaver-semconv.yml"
+  workflow_dispatch:
+
+env:
+  # Pinned Weaver image — the SAME pin the maintainer reference workflow uses
+  # (labs/advanced/step2-weaver-semconv/ci/weaver-check.yml). Bump deliberately
+  # so the guard is reproducible across attendees.
+  WEAVER_IMAGE: otel/weaver:v0.17.1
+  # The runner's dind build daemon (gitea-act-runner sidecar, tcp:2375 on the
+  # shared pod netns). act_runner does not propagate this into the job container,
+  # so set it explicitly here (ISI-7639 config: network=host, DOCKER_HOST=2375).
+  DOCKER_HOST: tcp://localhost:2375
+
+jobs:
+  weaver-check:
+    name: weaver registry check
+    # Maps to the runner's "ubuntu-latest:docker://node:20-bookworm" label
+    # (ISI-7639). Jobs start from node:20-bookworm so JS actions (checkout) run;
+    # the docker client is added below since that base image ships none.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # node:20-bookworm has no docker client. Install the Debian docker.io
+      # package (client + deps); we only use the client, which talks to the dind
+      # sidecar over $DOCKER_HOST. Identical to casino-images.yml.
+      - name: Install docker client
+        run: |
+          set -eux
+          if ! command -v docker >/dev/null 2>&1; then
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends docker.io
+          fi
+          docker version
+
+      # Run `weaver registry check` through the pinned image on the dind daemon.
+      #
+      # dind gotcha: the daemon is a SEPARATE container (sidecar) sharing only the
+      # pod netns, NOT the job's filesystem — so `docker run -v "$PWD:/work"`
+      # (what the GitHub reference workflow does) would bind-mount an EMPTY path
+      # on the daemon side and Weaver would see no registry. Instead we stream the
+      # registry into the container the same way casino-images.yml streams a build
+      # context: `docker cp` tars the files from the job workspace to the daemon.
+      # Then start the container (its entrypoint is `weaver`), capture the exit
+      # code with `docker wait`, and propagate it — non-zero turns the job red.
+      - name: Run Weaver registry check
+        run: |
+          set -eux
+          docker pull "$WEAVER_IMAGE"
+          # Create (not run) so we can copy the registry in before it starts.
+          # Entrypoint is `weaver`; these are its args. Absolute /registry and
+          # /weaver-policies have parent `/`, which exists on any (even scratch) image.
+          CID="$(docker create "$WEAVER_IMAGE" \
+            registry check \
+            --registry /registry \
+            --policy   /weaver-policies)"
+          docker cp semconv/registry        "$CID:/registry"
+          docker cp semconv/weaver-policies "$CID:/weaver-policies"
+          # -a streams Weaver's output to the job log; `docker wait` yields the
+          # real exit code (0 = conventions intact, non-zero = drift -> merge blocked).
+          docker start -a "$CID" || true
+          RC="$(docker wait "$CID")"
+          docker rm "$CID" >/dev/null 2>&1 || true
+          echo "weaver registry check exit code: $RC"
+          [ "$RC" -eq 0 ]
