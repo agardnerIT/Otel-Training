@@ -11,5 +11,11 @@
 # per-attendee at bootstrap — never commit it.
 .opencode/
 
+# opencode⇄Gitea secrets (ISI-7711). gitea-token.sh writes ~/.workshop-gitea.env
+# and clone-casino.sh writes ~/.git-credentials (both in $HOME); glob them
+# defensively in case a copy ever lands inside the tree.
+.workshop-gitea.env
+.git-credentials
+
 # mkdocs build output
 site/

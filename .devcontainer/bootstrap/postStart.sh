@@ -22,3 +22,28 @@ bash "$SCRIPT_DIR/create-cluster.sh" || {
   echo "WARN:   bash .devcontainer/bootstrap/create-cluster.sh" >&2
   exit 0   # non-fatal: don't block the codespace from opening
 }
+
+# opencode⇄Gitea credentials (ISI-7711). gitea-token.sh writes
+# ~/.workshop-gitea.env (GITEA_TOKEN/URL/USER). Source it here so any Gitea step
+# in this script has the creds, and install a one-time managed snippet so every
+# attendee shell (and opencode) picks up the creds and gets the helper scripts
+# on PATH. All idempotent + non-fatal — a codespace that never minted a token
+# still opens cleanly.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+WORKSHOP_GITEA_ENV="$HOME/.workshop-gitea.env"
+if [ -f "$WORKSHOP_GITEA_ENV" ]; then
+  log "sourcing Gitea credentials from $WORKSHOP_GITEA_ENV"
+  # shellcheck disable=SC1090
+  set -a; . "$WORKSHOP_GITEA_ENV" || true; set +a
+fi
+BASHRC="$HOME/.bashrc"
+MARKER="# >>> otel-training opencode<->gitea (ISI-7711) >>>"
+if [ -f "$BASHRC" ] && ! grep -qF "$MARKER" "$BASHRC" 2>/dev/null; then
+  log "wiring opencode⇄Gitea into ~/.bashrc (token + helper scripts on PATH)"
+  {
+    echo "$MARKER"
+    echo '[ -f "$HOME/.workshop-gitea.env" ] && set -a && . "$HOME/.workshop-gitea.env" && set +a'
+    echo "export PATH=\"$REPO_ROOT/gitops/opencode:\$PATH\""
+    echo "# <<< otel-training opencode<->gitea (ISI-7711) <<<"
+  } >> "$BASHRC" || true
+fi

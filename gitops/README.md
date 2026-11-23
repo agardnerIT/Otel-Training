@@ -106,7 +106,32 @@ gitops/
   argocd/casino-application.yaml  # auto-syncing Application (prune + selfHeal)
   seed/k8s/placeholder.yaml       # placeholder manifest (fallback demo)
   verify.sh                       # scripted live check of all three acceptance criteria
+  opencode/gitea-token.sh         # [opencode] mint a scoped Gitea token -> ~/.workshop-gitea.env
+  opencode/clone-casino.sh        # [opencode] clone casino into ~/casino + wire creds/hooks
+  opencode/gitea-pr.sh            # [opencode] branch -> commit -> push -> open PR (no `tea`)
+  opencode/verify-opencode-git.sh # [opencode] token + branch + PR round-trip check
+  opencode/AGENTS.md              # [opencode] git-loop rules seeded into the casino clone
 ```
+
+## opencode⇄Gitea git loop (ISI-7711)
+
+Attendees drive changes with **opencode** from the Codespace CLI instead of
+editing in the Gitea web UI. One-time setup (also wired into `postStart.sh` so
+every shell picks up the token and the helpers are on `PATH`):
+
+```bash
+make gitea-token     # mint a scoped Gitea token -> ~/.workshop-gitea.env (0600)
+make casino-clone    # clone casino into ~/casino, wire git creds + DCO hook
+make opencode-verify # prove the token + a branch + a PR round-trip (non-invasive)
+```
+
+Then the loop is: `cd ~/casino && opencode` → opencode edits a file → branch →
+`git commit -s` → push → `gitea-pr.sh "<title>"` opens a PR against `main` →
+review + **merge in the Gitea UI** → Argo CD syncs `k8s/**` (and the
+`.gitea/workflows` image build fires on `apps/casino/**`). The token falls back
+to the Gitea UI (*Settings → Applications → Generate Token*) if the API mint
+fails. Secrets live in `$HOME` (`~/.workshop-gitea.env`, `~/.git-credentials`)
+and are gitignored.
 
 ## Verification (run in the devcontainer / Codespace)
 
