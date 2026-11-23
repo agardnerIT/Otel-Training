@@ -242,7 +242,7 @@ bash gitops/bootstrap/bootstrap-gitops.sh
     `k8s.cluster.name == "<PARTICIPANT_ID>"` on every span, metric, and log.
 
     In the Dynatrace UI, replace `<PARTICIPANT_ID>` with your actual value (run
-    `echo $PARTICIPANT_ID` once; with `dtctl` the shell expands it for you, see below) and keep this as the **first `filter` line** of
+    `echo $PARTICIPANT_ID` once, or let the terminal fill it in, see below) and keep this as the **first `filter` line** of
     every query:
 
     ```dql
@@ -260,16 +260,18 @@ bash gitops/bootstrap/bootstrap-gitops.sh
     | sort spans desc
     ```
 
-    **Prefer the terminal?** `dtctl` runs the same DQL, and your shell already
-    has `PARTICIPANT_ID`, so there is nothing to paste or replace. Use double
-    quotes so the shell expands it (a cluster created without a
+    **Don't want to type your ID?** Your shell already has `PARTICIPANT_ID`.
+    Run this in the terminal and it prints the same query with your value
+    filled in, ready to copy into the DQL section (a cluster created without a
     `PARTICIPANT_ID` is named `otel-training`, hence the default):
 
     ```bash
-    dtctl query "fetch spans, from: now() - 30m
-    | filter k8s.cluster.name == \"${PARTICIPANT_ID:-otel-training}\"
+    cat <<EOF
+    fetch spans, from: now() - 30m
+    | filter k8s.cluster.name == "${PARTICIPANT_ID:-otel-training}"
     | summarize spans = count(), by: { service.name }
-    | sort spans desc"
+    | sort spans desc
+    EOF
     ```
 
     **What you should see:** your casino services — `vegas-frontend-service`,
