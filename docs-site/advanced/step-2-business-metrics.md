@@ -110,17 +110,20 @@ Read the diff before committing. The target shape (from
     - **Creates a new meter per request** (inside the handler): *"create the meter
       and instruments once at module scope, not inside the /spin handler."*
 
-## ④ Apply — commit → Argo CD sync
+## ④ Apply — opencode → PR → merge → Argo CD sync
 
-Same GitOps apply as Step 1 — the slots service is in the casino namespace:
+Same GitOps loop as Step 1 — the slots service is in the casino namespace, so ship
+it through **Gitea** from inside `~/casino` (let opencode run the loop, or do it by
+hand):
 
 ```bash
-git add . && git commit -m "feat(slots): add casino.bets.count + casino.wager.amount metrics"
-git push            # to your fork's main
+gitea-pr.sh "feat(slots): add casino.bets.count + casino.wager.amount metrics"
 ```
 
-Argo CD redeploys the service (hit **Refresh** at `http://localhost:30002` to
-force the sync); play a few rounds of slots so the instruments emit.
+Branch → signed-off commit → push → PR. **Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`); Argo CD then redeploys the service
+(hit **Refresh** at `http://localhost:30002` to force the sync). Play a few rounds
+of slots so the instruments emit.
 
 ## Dynatrace validation checkpoint
 

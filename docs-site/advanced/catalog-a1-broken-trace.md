@@ -132,14 +132,18 @@ before you let it continue.
 
 ## ④ Review & apply
 
-Read the diff against `after.slots-score-hop.js`, then ship via GitOps:
+Read the diff against `after.slots-score-hop.js`, then ship it through **Gitea**
+from inside your casino clone (`~/casino`). Let opencode run the git loop, or do it
+by hand:
 
 ```bash
-git add . && git commit -m "fix(slots): propagate trace context across the scoring hop"
-git push            # to your fork's main — Argo CD syncs the slots service
+gitea-pr.sh "fix(slots): propagate trace context across the scoring hop"
 ```
 
-Play a few rounds of slots so new traces flow.
+`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+prints the PR URL. **Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`) — Argo CD then syncs the slots
+service. Play a few rounds of slots so new traces flow.
 
 ## Verify
 

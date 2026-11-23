@@ -145,14 +145,18 @@ before you let it continue.
 
 ## ④ Review & apply
 
-Read the diff against `after.slots-logger.js`, then ship via GitOps:
+Read the diff against `after.slots-logger.js`, then ship it through **Gitea** from
+inside your casino clone (`~/casino`). Let opencode run the git loop, or do it by
+hand:
 
 ```bash
-git add . && git commit -m "feat(slots): inject trace_id/span_id into logs for correlation"
-git push            # to your fork's main — Argo CD syncs the slots service
+gitea-pr.sh "feat(slots): inject trace_id/span_id into logs for correlation"
 ```
 
-Play a few rounds of slots so new, correlated log lines flow.
+`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+prints the PR URL. **Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`) — Argo CD then syncs the slots
+service. Play a few rounds of slots so new, correlated log lines flow.
 
 ## Verify
 

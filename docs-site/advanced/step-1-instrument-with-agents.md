@@ -136,19 +136,28 @@ public Payout settleRound(@SpanAttribute("casino.game.name") String game,
 }
 ```
 
-## ④ Apply — commit → Argo CD sync
+## ④ Apply — opencode → PR → merge → Argo CD sync
 
-The casino namespace is GitOps-owned, so you apply app-code fixes through Git,
-not `kubectl`:
+The casino namespace is GitOps-owned, so you ship app-code fixes through **Gitea**,
+not `kubectl`. opencode is editing inside your casino clone (`~/casino`, from the one-time setup
+on [The environment](environment.md)) — let it run the git loop, or ship the
+change by hand from inside `~/casino`:
 
 ```bash
-git add . && git commit -m "feat(slots): add casino.slots.spin money-path span"
-git push            # to your fork's main
+# opencode can branch -> commit -> push -> PR itself; or do it by hand:
+gitea-pr.sh "feat(slots): add casino.slots.spin money-path span"
 ```
 
-Argo CD syncs within the reconcile interval (hit **Refresh** in the UI at
-`http://localhost:30002` to force it), redeploys the slots service, then play a
-few rounds of slots to generate traffic.
+`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+prints the PR URL. **Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`) — merging `main` is what triggers
+the rollout. Argo CD syncs within the reconcile interval (hit **Refresh** in the UI
+at `http://localhost:30002` to force it) and redeploys the slots service; then play
+a few rounds of slots to generate traffic.
+
+!!! note "GitLab path"
+    On the GitLab path the loop is the same — opencode edits, you open and merge an
+    **MR** on your fork, Argo CD syncs. See [Getting started](getting-started.md).
 
 ## ⑤ Verify — Dynatrace validation checkpoint
 

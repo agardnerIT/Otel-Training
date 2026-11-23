@@ -1,6 +1,6 @@
 # The environment
 
-**Goal:** understand the five moving parts of your lab — the casino app, GitLab,
+**Goal:** understand the five moving parts of your lab — the casino app, Gitea,
 Argo CD, and the OTel Operator + collectors — then open Dynatrace and see the
 planted issues you will fix across steps 1–7. This page also introduces the one
 pattern you reuse on every step: the **Problem → Opencode → Verify** loop. Budget
@@ -8,15 +8,16 @@ pattern you reuse on every step: the **Problem → Opencode → Verify** loop. B
 
 ## The shape of the lab
 
-Everything runs in one kind cluster inside your Codespace. Your GitLab fork is
-the single source of truth; Argo CD deploys whatever is committed there; the OTel
-Operator manages the collectors that enrich your telemetry and forward it to
-Dynatrace.
+Everything runs in one kind cluster inside your Codespace. Your git host is the
+in-cluster **Gitea** (`http://localhost:30001`), and you drive it with **opencode**:
+the agent edits the casino source, opens a pull request, and once you merge it,
+Argo CD deploys whatever is on `main`. The OTel Operator manages the collectors
+that enrich your telemetry and forward it to Dynatrace.
 
 ```mermaid
 flowchart LR
-  you["attendee"] -->|commit to fork| gitlab["GitLab fork<br/>k8s/ manifests"]
-  gitlab -->|HTTPS poll| argo["Argo CD"]
+  you["attendee + opencode"] -->|branch + PR| gitea["Gitea<br/>casino/casino repo<br/>k8s/ + apps/casino/"]
+  gitea -->|merge PR to main| argo["Argo CD"]
   argo -->|sync + selfHeal| casino["casino namespace<br/>frontend, scoring, slots,<br/>roulette, dice, blackjack"]
   operator["OTel Operator"] -->|manages| gw["otel-gateway-collector"]
   operator -->|manages| logs["otel-logs DaemonSet"]
@@ -25,12 +26,18 @@ flowchart LR
   gw -->|OTLP/HTTP| dt[("Dynatrace tenant")]
 ```
 
+!!! note "GitLab path (alternative)"
+    If your room runs the Dynatrace-solution **GitLab** instead of Gitea
+    (`GITLAB_TOKEN` / `GITLAB_REPO_URL` set — see [Getting started](getting-started.md)),
+    the shape is identical: swap **Gitea** for your GitLab fork and "merge the PR"
+    for "merge the MR". Everything else on this page is unchanged.
+
 ### Who does what
 
 | Component | Namespace | Role in the lab |
 |---|---|---|
 | Casino services | `casino` | Frontend + per-game services (slots, roulette, dice, blackjack) + scoring, Redis, PostgreSQL, k6 load-gen. The thing you are observing. |
-| GitLab fork | external | Holds the Kubernetes manifests under `k8s/`. You edit here. |
+| Gitea | `gitea` | In-cluster git host (`http://localhost:30001`). Holds the `casino/casino` repo — manifests under `k8s/`, service source under `apps/casino/`. You open PRs here. *(GitLab fork if your room runs the GitLab path.)* |
 | Argo CD | `argocd` | Polls your fork and applies it. `selfHeal` reverts hand-drift. |
 | OTel Operator | `observability` | Manages the gateway collector and the logs DaemonSet as CRDs. |
 | Gateway collector | `observability` | The single control point. All collector fixes in steps 4–7 land here. |
@@ -46,18 +53,45 @@ flowchart LR
     Gitea-free `kubectl apply` bring-up. Default is **`full`** (the diagram
     above). Details: [`deploy/casino/README.md`](https://github.com/henrikrexed/Otel-Training/blob/main/deploy/casino/README.md).
 
-## The lab mechanic: edit → commit → sync
+## The lab mechanic: opencode → PR → merge → sync
 
-Your loop for the whole track:
+App-code changes reach the cluster through Git, driven by **opencode** against the
+in-cluster **Gitea**. Set the loop up **once**, then repeat the last part on every
+app-code step.
 
-1. Edit a manifest under `k8s/` in your fork — the GitLab **Web IDE** or a local clone.
-2. Commit and push to `main` on your fork.
-3. Argo CD auto-syncs within the reconcile interval; the **Refresh** button in the
-   Argo CD UI (`http://localhost:30002`) forces it instantly.
+**One-time setup** (from the training repo root — the helper scripts are already
+on your `PATH`):
+
+```bash
+gitea-token.sh      # mint a scoped Gitea token -> ~/.workshop-gitea.env
+clone-casino.sh     # clone casino/casino -> ~/casino, wire creds + the DCO hook
+cd ~/casino && opencode
+```
+
+**Every app-code step** — from inside `~/casino`, after opencode has edited the
+source:
+
+```bash
+# opencode can run the whole loop itself; or ship it by hand:
+gitea-pr.sh "fix(slots): propagate trace context across the scoring hop"
+```
+
+`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+opens a pull request against `main` — printing the PR URL. **Review and merge the
+PR in the Gitea UI** (`http://localhost:30001/casino/casino/pulls`). Merging `main`
+is what triggers the rollout:
+
+- a change under `k8s/**` → Argo CD syncs it into the `casino` namespace;
+- a change under `apps/casino/**` → `.gitea/workflows/casino-images.yml` rebuilds
+  the service image, which the next sync rolls out.
+
+Hit **Refresh** in the Argo CD UI (`http://localhost:30002`) to force a sync
+instantly rather than waiting for the reconcile interval.
 
 !!! warning "Do not `kubectl apply` into the casino namespace"
-    Argo CD `selfHeal` reverts any hand-drift. Your GitLab fork is the single
-    source of truth — if a change is not committed there, it does not persist.
+    Argo CD `selfHeal` reverts any hand-drift. The merged state on Gitea `main` is
+    the single source of truth — if a change is not merged there, it does not
+    persist. (Never push straight to `main` either — always go through a PR.)
 
 ## The agent loop: Problem → Opencode → Verify
 
@@ -72,7 +106,7 @@ flowchart LR
   p["① Problem<br/>see the symptom in Dynatrace<br/>(missing span, climbing series, PII)"]
   o["② Opencode<br/>prompt the agent: goal + target file + skill"]
   r["③ Review<br/>read the diff it produces"]
-  a["④ Apply<br/>app → commit → Argo sync<br/>collector → kubectl apply"]
+  a["④ Apply<br/>app → PR → merge → Argo sync<br/>collector → kubectl apply"]
   v["⑤ Verify<br/>re-run the DQL checkpoint"]
   p --> o --> r --> a --> v
   v -. "not fixed? steer it back" .-> o
@@ -95,10 +129,13 @@ Each step gives you a **copy-pasteable prompt** with three things the agent need
     after k8sattributes."* Steering the agent is the skill this track
     teaches; the verify checkpoint tells you when you are done.
 
-**Apply differs by target.** App-code fixes (Steps 1–2) go through Git —
-`commit → push → Argo CD sync` — because the casino namespace is GitOps-owned
-(`selfHeal` reverts hand-drift). Collector fixes (Steps 4–7) are applied with
-`kubectl apply` against the `observability` namespace, which Argo does not manage.
+**Apply differs by target.** App-code fixes (Steps 1–2 and the catalog **A**
+exercises) ship through **Gitea + opencode** — opencode edits in `~/casino`,
+`gitea-pr.sh` opens a PR, you merge it, Argo CD syncs — because the casino
+namespace is GitOps-owned (`selfHeal` reverts hand-drift). Collector fixes
+(Steps 4–7 and the catalog **B** exercises) are applied with `kubectl apply`
+against the `observability` namespace, which Argo does not manage (opencode can
+run that `kubectl apply` for you too).
 
 ## The collector is the control point
 
@@ -144,15 +181,17 @@ Argo CD should show the `casino` Application `Synced` / `Healthy`:
 
 ```bash
 kubectl -n argocd get application casino
-kubectl -n argocd get secret casino-repo -o jsonpath='{.data.url}' | base64 -d; echo
-# -> https://<gitlab-host>/<attendee>/casino.git
+kubectl -n argocd get application casino -o jsonpath='{.spec.source.repoURL}'; echo
+# -> http://gitea-http.gitea.svc:3000/casino/casino.git   (or your GitLab fork URL)
 ```
 
 ## Definition of done
 
 - [ ] You can name each component and its namespace
 - [ ] `casino` Application shows `Synced` / `Healthy` in Argo CD
-- [ ] The casino-repo secret points at **your** GitLab fork
+- [ ] The casino Application `repoURL` points at your git host (in-cluster Gitea,
+      or your GitLab fork on the GitLab path)
+- [ ] You ran the one-time setup (`gitea-token.sh` → `clone-casino.sh` → `cd ~/casino`)
 - [ ] You can state the three collector-pipeline invariants
 - [ ] You have seen the planted issues in Dynatrace (missing money-path, PII in
       logs, single cost bucket, climbing cardinality)

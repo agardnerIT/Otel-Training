@@ -129,14 +129,18 @@ it continue.
 
 ## ④ Review & apply
 
-Read the diff against `after.slots-settle.js`, then ship via GitOps:
+Read the diff against `after.slots-settle.js`, then ship it through **Gitea** from
+inside your casino clone (`~/casino`). Let opencode run the git loop, or do it by
+hand:
 
 ```bash
-git add . && git commit -m "fix(slots): record exceptions as span events + ERROR status on the spin path"
-git push            # to your fork's main — Argo CD syncs the slots service
+gitea-pr.sh "fix(slots): record exceptions as span events + ERROR status on the spin path"
 ```
 
-Trigger a few failing spins (an out-of-range bet, or point slots at a
+`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+prints the PR URL. **Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`) — Argo CD then syncs the slots
+service. Trigger a few failing spins (an out-of-range bet, or point slots at a
 down scoring endpoint) so error spans flow.
 
 ## Verify

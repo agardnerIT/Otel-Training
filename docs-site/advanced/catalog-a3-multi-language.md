@@ -147,14 +147,18 @@ before you let it continue.
 
 ## ④ Review & apply
 
-Read the diff against `after.roulette-spin.py`, then ship via GitOps:
+Read the diff against `after.roulette-spin.py`, then ship it through **Gitea** from
+inside your casino clone (`~/casino`). Let opencode run the git loop, or do it by
+hand:
 
 ```bash
-git add . && git commit -m "feat(roulette): add casino.roulette.spin span matching the slots contract"
-git push            # to your fork's main — Argo CD syncs the roulette service
+gitea-pr.sh "feat(roulette): add casino.roulette.spin span matching the slots contract"
 ```
 
-Play a few rounds of roulette so new spans flow.
+`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+prints the PR URL. **Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`) — Argo CD then syncs the roulette
+service. Play a few rounds of roulette so new spans flow.
 
 ## Verify
 
