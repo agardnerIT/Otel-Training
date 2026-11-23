@@ -143,6 +143,18 @@ fi
 if doctor_out="$(dctl doctor --context verify 2>&1)"; then
   printf '%s\n' "$doctor_out" | grep -E '^\[(OK|FAIL)\]' | sed 's/^/      /'
   ok "dtctl authenticated against the tenant"
+
+  # Persist a REAL context so plain `dtctl doctor` / `dtctl query` work with no
+  # manual steps (the ephemeral config above is deleted on exit). Idempotent:
+  # set-credentials/set-context update in place. Never fails the verify.
+  if dtctl config set-credentials training-token --token "$DT_PLATFORM_TOKEN" >/dev/null 2>&1 \
+    && dtctl config set-context training --environment "$url" --token-ref training-token \
+         --safety-level readwrite-all >/dev/null 2>&1 \
+    && dtctl config use-context training >/dev/null 2>&1; then
+    ok "configured dtctl context 'training' (~/.config/dtctl/config)"
+  else
+    warn "could not write the default dtctl config; run: dtctl config set-context --help"
+  fi
   bold "RESULT: dtctl OK (authenticated)"
   exit 0
 else
