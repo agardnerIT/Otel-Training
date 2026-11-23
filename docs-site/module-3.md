@@ -119,20 +119,38 @@ any bill — it degrades queries and dashboards first, ingest cost second.
     username` to every bet recording. The ask was reasonable; the dimension
     key was unbounded.
 
-### Fix it at the source (SDK)
+### Fix it at the source (SDK) — opencode → Gitea PR
 
-In Gitea, repo `casino/casino`, edit `50-frontend.yaml`:
+Same loop as M1/M2: drive **opencode**, review the diff, ship it as a **Gitea PR**
+that Argo CD syncs. (If you have not cloned the casino repo for opencode yet, run
+the [one-time setup from M1](module-1.md#the-fix-drive-it-with-opencode-ship-it-through-gitea).)
 
-```yaml
-- name: CASINO_PLAYER_LEVEL_METRICS
-  value: "false"
+```bash
+opencode run "Using the otel-instrumentation skill: in k8s/50-frontend.yaml, the \
+vegas-casino-frontend container sets CASINO_PLAYER_LEVEL_METRICS to 'true', which \
+adds an unbounded player_id dimension to casino.bet.amount. Set it to 'false'. \
+Change nothing else."
 ```
 
-Commit, and watch Argo CD roll the frontend:
+Read the one-line diff (`value: "true"` → `value: "false"`), then ship it:
+
+```bash
+gitea-pr.sh "fix(frontend): drop unbounded player_id metric dimension"
+```
+
+**Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`); Argo CD rolls the frontend (hit
+**Refresh** at `http://localhost:30002`):
 
 ```bash
 kubectl -n casino rollout status deploy/vegas-casino-frontend
 ```
+
+!!! warning "If the agent gets it wrong — steer it back"
+    - **Flipped the wrong knob** (touched `AUDIT_LOG_VERBOSITY`): *"the only
+      value to change is CASINO_PLAYER_LEVEL_METRICS, set it to false."*
+    - **Deleted the env var** instead of setting it false: *"keep the env var,
+      just change its value to false."*
 
 ### Backstop it at the collector (control point)
 
@@ -140,8 +158,26 @@ The SDK fix only holds while every deployment keeps that knob `false`. A
 control point makes the policy structural: the gateway drops the dimension
 no matter what workloads send.
 
-In your Codespace repo, edit `observability/collectors/gateway.yaml`. In the
-`config:` block, add a transform processor:
+!!! note "Collector fixes apply differently — `kubectl apply`, not the Gitea PR"
+    The gateway collector (`observability/collectors/gateway.yaml`) lives in the
+    **training repo** and runs in the `observability` namespace, which Argo CD
+    does **not** manage — so collector changes are applied with `kubectl apply`,
+    not the casino git loop. opencode still drives the edit; only the apply step
+    differs. (This is the same app-code-vs-collector split the advanced track
+    spells out in [The environment](advanced/environment.md#the-agent-loop-problem-opencode-verify).)
+
+Drive the edit with opencode, pointed at the collector file and the OTTL skill:
+
+```bash
+opencode run "Using the otel-ottl skill: in observability/collectors/ \
+gateway.yaml, add a transform processor 'transform/drop_player_id' \
+(error_mode: ignore) that runs delete_key(attributes, \"player_id\") on each \
+metric datapoint, and reference it in the metrics pipeline after k8sattributes \
+and before cumulative_to_delta. Keep memory_limiter first and do not add a \
+batch processor."
+```
+
+The target shape — a transform processor:
 
 ```yaml
     processors:
@@ -153,8 +189,7 @@ In your Codespace repo, edit `observability/collectors/gateway.yaml`. In the
               - delete_key(attributes, "player_id")
 ```
 
-And reference it in the **metrics** pipeline, after enrichment and before
-the exporter:
+referenced in the **metrics** pipeline, after enrichment and before the exporter:
 
 ```yaml
     service:
@@ -168,7 +203,12 @@ the exporter:
 *(Keep the processor list already present in your file; the point is where the
 new one sits.)*
 
-Apply the config-as-product discipline:
+!!! warning "If the agent gets it wrong — steer it back"
+    *"memory_limiter must stay the first processor, there must be no batch
+    processor, and transform/drop_player_id goes on the metrics pipeline only —
+    between k8sattributes and cumulative_to_delta."*
+
+Review the diff, then apply the config-as-product discipline:
 
 ```bash
 bash observability/validate.sh
@@ -211,17 +251,29 @@ tenant log access just became a data handler.
     ships redaction helpers (`services/common/pii.js`: masked email, hashed
     IP, masked username) that are used automatically in every *other* mode.
 
-### Fix it at the source (SDK)
+### Fix it at the source (SDK) — opencode → Gitea PR
 
-In Gitea, edit `50-frontend.yaml`:
+Same loop again — drive opencode, review, ship a Gitea PR:
 
-```yaml
-- name: AUDIT_LOG_VERBOSITY
-  value: "redacted"
+```bash
+opencode run "Using the otel-instrumentation skill: in k8s/50-frontend.yaml, the \
+vegas-casino-frontend container sets AUDIT_LOG_VERBOSITY to 'verbose', which logs \
+raw player email, client IP, and user agent in login_audit lines. Set it to \
+'redacted' so the built-in redaction helpers mask the PII. Change nothing else."
 ```
 
-Commit, let Argo CD roll the frontend, then log in again and re-check the
-`login_audit` entries.
+Read the one-line diff (`value: "verbose"` → `value: "redacted"`), ship it, and
+merge the PR:
+
+```bash
+gitea-pr.sh "fix(frontend): redact PII in login_audit logs"
+```
+
+Argo CD rolls the frontend; log in again and re-check the `login_audit` entries.
+
+!!! warning "If the agent gets it wrong — steer it back"
+    *"the only value to change is AUDIT_LOG_VERBOSITY, set it to `redacted` (not
+    `off` — we keep the audit trail, just masked)."*
 
 **What you should see:** emails masked (`j****@…`), IPs hashed to a short
 hex digest, usernames partially masked. The audit event survives — you kept
@@ -234,9 +286,11 @@ can scrub attributes or body fields even if a workload ships raw values —
 with one caveat: body fields are strings, so a collector-side regex scrub of
 the body is possible but brittle; attribute-level scrubbing is robust. When
 you run collectors as the enforcement point at fleet scale, this backstop is
-what makes PII policy enforceable in one place. If you have time, try an
-`attributes/delete_key` action for `user.email` in the logs pipeline using
-the same steps as Exercise A.
+what makes PII policy enforceable in one place. If you have time, drive opencode
+with the `otel-ottl` skill to add a `delete_key(attributes, "user.email")`
+transform on the **logs** pipeline of `observability/collectors/gateway.yaml`,
+then `validate.sh` + `kubectl apply` it exactly as in Exercise A (collector, so
+`kubectl apply` — not the Gitea PR loop).
 
 ## The fleet-scale version of what you just did
 
@@ -253,10 +307,12 @@ herd. Same discipline you practiced here; the tooling scales it.
 - [ ] You can recite the canonical processor order and defend each position
 - [ ] You found `player_id` on `casino.bet.amount` and explained why unbounded
       dimensions are dangerous
-- [ ] Source fix committed (`CASINO_PLAYER_LEVEL_METRICS=false`) and verified
-- [ ] Collector backstop for `player_id` validated and applied
-- [ ] You found raw PII in `login_audit` logs, fixed the verbosity knob, and
-      verified redaction in Dynatrace
+- [ ] Source fix driven with opencode and shipped as a **merged Gitea PR**
+      (`CASINO_PLAYER_LEVEL_METRICS=false`) and verified
+- [ ] Collector backstop for `player_id` driven with opencode, then
+      `validate.sh` + `kubectl apply` (collector, not the Gitea loop)
+- [ ] You found raw PII in `login_audit` logs, fixed the verbosity knob via an
+      opencode-driven Gitea PR, and verified redaction in Dynatrace
 - [ ] You can say, in one sentence, why the collector is the right place for
       a policy backstop — and why the source fix still comes first
 

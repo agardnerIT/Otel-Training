@@ -17,6 +17,19 @@ One pattern under all five: **the defect was never in the application logic —
 it was in configuration nobody owned.** Observability went production-grade
 the moment configuration became a reviewed artifact in Git.
 
+And one *mechanic* under all five: you never hand-edited a running cluster. Every
+fix followed the **Problem → Opencode → Verify** loop — observe the symptom in
+Dynatrace, drive the **opencode** agent at the target file with the right skill,
+review its diff, then ship it:
+
+| Fix surface | How it shipped |
+|---|---|
+| **App code / casino manifests** (`k8s/**` — M1, M2, M3 source fixes, M4 head sampling) | opencode → `gitea-pr.sh` → **merge the PR in Gitea** → Argo CD syncs `main` |
+| **Collector** (`observability/collectors/gateway.yaml` — M3 backstop, M4 tail sampling) | opencode → `validate.sh` → `kubectl apply` (the `observability` namespace is not Argo-managed) |
+
+Steering the agent back when its diff was wrong — *"memory_limiter stays first, no
+batch processor"* — was the real skill: the DQL checkpoint told you when it was done.
+
 ## The enterprise readiness checklist
 
 The checklist below is the take-home from *Beyond the Honeymoon: OTel at
@@ -36,6 +49,10 @@ Enterprise Scale*. Every item maps to something you touched today.
 - [ ] **Literal bools and escaped env** — collector config gotchas that pass
       validation and fail at runtime; the gateway CR in this repo documents
       two of them in comments. Read your collector's comments; write yours.
+- [ ] **Every change is a reviewed PR, not a live edit** — app-code fixes go
+      opencode → Gitea PR → merge → Argo CD sync (never `kubectl` into a
+      GitOps-owned namespace); collector fixes go opencode → validate →
+      `kubectl apply`. The agent drafts; you review the diff and own the merge.
 
 ### Pipeline hygiene
 
@@ -73,8 +90,9 @@ Enterprise Scale*. Every item maps to something you touched today.
 ## Wrap-up
 
 You took a broken casino to a production-grade pipeline in three hours: SDK
-first, collector second, every fix verified in Dynatrace. Your Codespace and
-every config you wrote stay yours.
+first, collector second, every fix driven with opencode and shipped as a
+reviewed Gitea PR (or a validated collector apply), every fix verified in
+Dynatrace. Your Codespace and every config you wrote stay yours.
 
 Fill in the session survey before you leave — and if you produce casino
 telemetry at work now, you know exactly which honeymoon you are ending.

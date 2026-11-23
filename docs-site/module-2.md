@@ -43,10 +43,35 @@ the anti-pattern the declarative file replaces.
 Your cluster runs the OpenTelemetry Operator (namespace `observability`). It
 can inject the Java agent into any workload — no Dockerfile change, no code.
 
-### Step 1 — create the config and the Instrumentation CR
+You make this change the same way as M1: drive **opencode**, review its diff,
+and ship it as a **Gitea PR** that Argo CD syncs. If you have not cloned the
+casino repo for opencode yet, run the [one-time setup from M1](module-1.md#the-fix-drive-it-with-opencode-ship-it-through-gitea)
+(`gitea-token.sh` → `clone-casino.sh` → `cd ~/casino && opencode`) first.
 
-In Gitea, repo `casino/casino`, create a new file **`21-scoring-otel.yaml`**
-(**Add file → New file**) with:
+### ② Opencode — create the config and wire the deployment
+
+Drive the agent with one prompt that names the **goal**, the two **target files**,
+and the **skill**:
+
+```bash
+opencode run "Using the otel-instrumentation skill: give the Java \
+vegas-scoring-service declarative, zero-code OTel via the operator. (1) Create \
+k8s/21-scoring-otel.yaml holding a ConfigMap 'scoring-otel-config' whose \
+otel-config.yaml (file_format 1.1) wires resource identity + host/process/ \
+container detectors, tracecontext+baggage propagators, and tracer/meter/logger \
+providers all exporting OTLP to \
+http://otel-gateway-collector.observability.svc.cluster.local:4317 (tls \
+insecure), plus an Instrumentation CR 'casino-java' setting OTEL_CONFIG_FILE=/ \
+etc/otel/otel-config.yaml. (2) Edit k8s/20-scoring.yaml: add the pod annotation \
+instrumentation.opentelemetry.io/inject-java: casino-java, the OTEL_CONFIG_FILE \
+env var, and mount the ConfigMap at /etc/otel. Keep the existing container spec \
+otherwise unchanged."
+```
+
+### ③ Review — read the diff
+
+Read both files opencode writes before you ship them. The new
+**`k8s/21-scoring-otel.yaml`** should converge on:
 
 ```yaml
 apiVersion: v1
@@ -120,19 +145,15 @@ spec:
     deprecated. It is the *Collector's* `batch` processor that is deprecated — you will
     see its replacement (exporter-level `sending_queue.batch`) in Module 3.
 
-Read it before you commit — every block maps to a concept from M1: resource
-identity, propagation, per-signal pipelines (tracer / meter / logger
-providers), each with its own batch processor and OTLP exporter.
+Every block maps to a concept from M1: resource identity, propagation,
+per-signal pipelines (tracer / meter / logger providers), each with its own
+batch processor and OTLP exporter.
 
 Note what the file does **not** contain: any of the `OTEL_*` env vars from the
 deployment. If we needed one, it would have to appear as `${VAR}` inside the
 file to be honored at all.
 
-Commit the file.
-
-### Step 2 — wire the scoring deployment to the agent and the file
-
-Edit `20-scoring.yaml` in the same repo. Three changes:
+And the three edits opencode makes to **`k8s/20-scoring.yaml`**:
 
 1. Add the injection annotation to the **pod template** metadata (the
    `template.metadata.annotations` block — create it if missing):
@@ -164,7 +185,34 @@ Edit `20-scoring.yaml` in the same repo. Three changes:
           name: scoring-otel-config
     ```
 
-Commit. Argo CD syncs; watch the rollout:
+!!! warning "If the agent gets it wrong — steer it back, don't hand-fix"
+    Common misses and the one-line correction to reply with:
+
+    - **`meter_provider` or `logger_provider` dropped** (only traces wired):
+      *"the file must wire all three — tracer_provider, meter_provider, and
+      logger_provider — each exporting OTLP to the gateway, or JVM metrics and
+      logs will still be missing."*
+    - **ConfigMap not mounted** / annotation on the wrong metadata block: *"the
+      inject-java annotation goes on the pod template metadata, and the ConfigMap
+      must mount at /etc/otel in the container."*
+    - **Edited the wrong deployment**: *"the only deployment to touch is
+      k8s/20-scoring.yaml (vegas-casino-scoring)."*
+
+    Re-run opencode with the correction — the verify checkpoint tells you when
+    it is done.
+
+### ④ Apply — opencode → PR → merge → Argo CD sync
+
+Ship both files through **Gitea** (the casino namespace is GitOps-owned). Let
+opencode run the git loop, or do it by hand from inside `~/casino`:
+
+```bash
+gitea-pr.sh "feat(scoring): declarative zero-code OTel via operator"
+```
+
+**Review and merge the PR in the Gitea UI**
+(`http://localhost:30001/casino/casino/pulls`). Argo CD syncs the merged `main`
+(hit **Refresh** at `http://localhost:30002` to force it); watch the rollout:
 
 ```bash
 kubectl -n casino rollout status deploy/vegas-casino-scoring
@@ -200,7 +248,9 @@ Give it a minute, then with your cluster filter:
 
 - [ ] You can explain the three config surfaces and when each wins
 - [ ] You can state the env-var rule for file mode without looking it up
-- [ ] `21-scoring-otel.yaml` committed: ConfigMap + Instrumentation CR
+- [ ] You drove the change with opencode and shipped it as a **merged Gitea
+      PR** — `k8s/21-scoring-otel.yaml` (ConfigMap + Instrumentation CR) plus the
+      `k8s/20-scoring.yaml` wiring
 - [ ] JVM metrics and logs from `vegas-scoring-service` visible in Dynatrace
 - [ ] Traces still connected end-to-end
 
