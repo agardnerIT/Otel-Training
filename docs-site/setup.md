@@ -368,6 +368,23 @@ kubectl -n observability logs deploy/otel-gateway-collector --tail=5
 Expected: `otel-gateway` and `otel-logs` both `Running`, no export errors in
 the gateway log.
 
+### Check the load generator
+
+A k6 load generator plays the casino for you. It logs **only failures**, so
+quiet logs mean healthy:
+
+```bash
+kubectl -n casino get deploy vegas-casino-loadgen
+kubectl -n casino logs deploy/vegas-casino-loadgen -c k6 --tail=20
+```
+
+Healthy: the deployment is `1/1` and the log shows only k6's progress line,
+for example `3/3 VUs, 146 complete and 0 interrupted iterations`.
+
+Failing: you also see lines such as
+`FAIL login: POST http://.../api/user/login -> 502`, naming the URL and status
+that broke.
+
 ## Definition of done — M0
 
 - [ ] `kubectl get nodes` shows one Ready node
