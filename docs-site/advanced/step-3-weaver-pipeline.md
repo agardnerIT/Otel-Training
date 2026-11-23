@@ -196,6 +196,12 @@ git push origin cost/round-id-dimension
 FAIL: metric casino.payout.total must not carry high-cardinality dimension 'casino.round.id'
 ```
 
+!!! note "Either way the check goes red"
+    `casino.round.id` is not a declared attribute in the registry, so depending on
+    your edit Weaver may report the policy deny above *or* an unresolved-reference
+    error first — both exit non-zero, both block the merge. The point is the guard
+    catches the high-cardinality dimension before it ships.
+
 The cost framing is the point: this dimension would have multiplied the payout
 metric's series count by the number of distinct rounds — the exact driver you
 chargeback in the [cost-center transform (B2)](catalog-b2-cost-center.md) and
@@ -232,7 +238,7 @@ fetch spans
 - [ ] `weaver registry check` exits 0 on the intact registry (run locally via the pinned image)
 - [ ] A camelCase rename is denied by policy (Part 1)
 - [ ] A high-cardinality `*.id` metric dimension is denied by policy (Part 2)
-- [ ] The `weaver-semconv-check` Gitea Actions job runs on your PR and goes **red** on drift
+- [ ] The **Weaver semconv check (Gitea CI)** workflow (job `weaver registry check`) runs on your PR and goes **red** on drift
 - [ ] The Step 1 DQL still returns rows (names held stable)
 
 Next: [Step 4 — Cost of observability](step-4-cost-of-observability.md).
