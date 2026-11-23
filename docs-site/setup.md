@@ -408,6 +408,25 @@ bash gitops/bootstrap/bootstrap-gitops.sh
     you, so traces flow without you touching the UI. (First telemetry can take a
     couple of minutes to land.)
 
+!!! tip "DQL returns entities too (Smartscape) — a UI-independent my-cluster-is-there check"
+    Grail holds more than telemetry: the **Smartscape entities** (clusters,
+    namespaces, pods, services, …) are queryable with the same DQL in the same
+    notebook. Use this as a UI-independent way to confirm your cluster is there —
+    it sidesteps the UI navigation-path churn from issue #68:
+
+    ```dql
+    smartscapeNodes "K8S_CLUSTER"
+    | filter name == "<PARTICIPANT_ID>"
+    ```
+
+    Optional — list the namespaces in your cluster:
+
+    ```dql
+    smartscapeNodes "K8S_NAMESPACE"
+    | filter k8s.cluster.name == "<PARTICIPANT_ID>"
+    | fieldsKeep `tags:k8s.labels`, k8s.cluster.name, name
+    ```
+
 5. **Prove the scope isolates you.** Drop the cluster filter for a moment and
    count the distinct clusters on the tenant — you will see everyone's:
 
@@ -424,8 +443,12 @@ bash gitops/bootstrap/bootstrap-gitops.sh
     Notebook queries run as **you** (your signed-in session), not via a token — so
     the whole M0–M5 path needs no `DT_PLATFORM_TOKEN`. They do need Grail **read**
     scopes (`storage:spans:read`, `storage:logs:read`, …) bound to your user; on a
-    shared training tenant the facilitator grants these for you. (The optional
-    `dtctl` catalog labs are the only ones that also need `DT_PLATFORM_TOKEN` —
+    shared training tenant the facilitator grants these for you. The Smartscape
+    entity queries above (`smartscapeNodes …`) additionally need the
+    **`storage:smartscape:read`** user scope, which the facilitator grants alongside
+    the other Grail read scopes — since the notebook runs as the signed-in user,
+    no token change is involved. (The optional `dtctl` catalog labs are the only
+    ones that also need `DT_PLATFORM_TOKEN` —
     see [`DT_PLATFORM_TOKEN`](#dt_platform_token-scopes-user-permissions-and-whether-you-need-it).)
 
 ## 4. Open the GitOps loop
@@ -545,6 +568,7 @@ that broke.
 - [ ] `opencode run "reply with the word READY"` returns a completion (proxy auth works)
 - [ ] `npx skills add henrikrexed/observability-agent-skills@v1.0.0` ran (or the bootstrap installer fallback), and `opencode debug skill | grep -E 'otel-|dt-|dtctl'` prints the three skill families
 - [ ] The scoped `fetch spans | filter k8s.cluster.name == "<PARTICIPANT_ID>"` query returns your casino services in Dynatrace
+- [ ] Your cluster appears as a Smartscape entity via `smartscapeNodes "K8S_CLUSTER" | filter name == "<PARTICIPANT_ID>"` in the notebook
 - [ ] Gitea reachable at http://localhost:30001, repo `casino/casino` visible
 - [ ] Casino UI reachable at http://localhost:30000 and you played a round
 - [ ] `otel-gateway` log shows no export errors
