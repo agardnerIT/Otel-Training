@@ -28,7 +28,7 @@ source of truth** the GitOps path (ISI-6796) consumes — Argo CD syncs
 | `k8s/33-blackjack.yaml`   | Blackjack game (Node) — http 8084 / gRPC 50054 |
 | `k8s/40-dashboard.yaml`   | Dashboard — http 3001 / gRPC 50055 |
 | `k8s/50-frontend.yaml`    | Frontend web UI — http 3000 (trace root) |
-| `k8s/60-loadgen-k6.yaml`  | k6 load-gen Job (stock `grafana/k6`) + script ConfigMap |
+| `k8s/60-loadgen-k6.yaml`  | k6 load-gen Deployment (stock `grafana/k6`) + script ConfigMap |
 | `verify.sh`               | live-cluster acceptance checks (ISI-6794 AC) |
 
 22 resources total (9 Deployments, 9 Services, 1 Job, 2 ConfigMaps, 1 ServiceAccount).

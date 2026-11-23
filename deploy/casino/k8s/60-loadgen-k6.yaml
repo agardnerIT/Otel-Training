@@ -7,9 +7,9 @@
 # into the stock k6 image at /scripts (ISI-7625 D2b). This removes the only
 # casino image that was never built/published by CI.
 #
-# Modelled as a Job (not a Deployment): k6 runs one long test for DURATION then
-# exits cleanly. DURATION is sized to cover a ~3h session. To re-run after it
-# completes, delete the Job and let Argo CD recreate it, or bump DURATION.
+# Modelled as a Deployment so Argo CD reports Healthy while load runs. k6 runs
+# one test for DURATION (sized for a ~3h session), exits, and is restarted,
+# giving continuous load.
 # VUS is kept low (3) to stay within the per-attendee cluster budget.
 #
 # The init container waits for the frontend /health before starting load, but is
@@ -67,6 +67,14 @@ data:
 
     const JSON_HDR = { headers: { 'Content-Type': 'application/json' } };
 
+    // check() that also logs failures (and only failures) so `kubectl logs` shows
+    // what is breaking while k6 only prints its summary at the end of the test.
+    function checked(res, name) {
+      const pass = check(res, { [name]: (r) => r.status >= 200 && r.status < 300 });
+      if (!pass) console.error(`FAIL ${name}: ${res.request.method} ${res.request.url} -> ${res.status}`);
+      return pass;
+    }
+
     function player() {
       return `loadgen-${__VU}-${Math.floor(Math.random() * 1000)}`;
     }
@@ -75,8 +83,8 @@ data:
       const username = player();
 
       // 1. Land on the lobby and list the games.
-      check(http.get(`${BASE}/`), { 'lobby 200': (r) => r.status === 200 });
-      check(http.get(`${BASE}/api/games`), { 'games listed': (r) => r.status === 200 });
+      checked(http.get(`${BASE}/`), 'lobby');
+      checked(http.get(`${BASE}/api/games`), 'games listed');
 
       // 2. Log in + seed a balance.
       // Login validates email + a profileType in ['partner','customer','dynatracer','other'],
@@ -88,7 +96,7 @@ data:
         ProfileType: 'other',
         Balance: 1000,
       });
-      check(http.post(`${BASE}/api/user/login`, creds, JSON_HDR), { 'login 2xx': (r) => r.status >= 200 && r.status < 300 });
+      checked(http.post(`${BASE}/api/user/login`, creds, JSON_HDR), 'login');
       http.post(`${BASE}/api/user/init`, JSON.stringify({ Username: username, Balance: 1000 }), JSON_HDR);
       http.get(`${BASE}/api/user/balance?username=${username}`);
 
@@ -110,8 +118,8 @@ data:
       sleep(1 + Math.random() * 2);
     }
 ---
-apiVersion: batch/v1
-kind: Job
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: vegas-casino-loadgen
   labels:
@@ -121,9 +129,11 @@ metadata:
     app.kubernetes.io/managed-by: argocd
     app.kubernetes.io/component: loadgen
 spec:
-  backoffLimit: 6
-  completions: 1
-  parallelism: 1
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: vegas-casino
+      app.kubernetes.io/component: loadgen
   template:
     metadata:
       labels:
@@ -131,7 +141,7 @@ spec:
         app.kubernetes.io/instance: vegas-casino
         app.kubernetes.io/component: loadgen
     spec:
-      restartPolicy: Never
+      restartPolicy: Always
       initContainers:
         - name: wait-for-frontend
           image: curlimages/curl:8.11.1

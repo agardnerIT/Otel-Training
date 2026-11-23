@@ -113,7 +113,7 @@ if kubectl -n "$OBS_NS" get svc "$GATEWAY_SVC" >/dev/null 2>&1; then
 else
   fail "gateway collector service $GATEWAY_SVC.$OBS_NS missing — install observability first"
 fi
-GW_POD=$(kubectl -n "$OBS_NS" get pod -l app.kubernetes.io/component=gateway-collector \
+GW_POD=$(kubectl -n "$OBS_NS" get pod -l app.kubernetes.io/name=otel-gateway \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 if [[ -n "$GW_POD" ]]; then
   info "inspecting gateway collector logs: $GW_POD"
@@ -142,18 +142,15 @@ info "propagation / missing logs by design."
 
 # --- 4. Load generator ------------------------------------------------------
 hdr "4. Load generator driving traffic"
-if kubectl -n "$NS" get job vegas-casino-loadgen >/dev/null 2>&1; then
-  active=$(kubectl -n "$NS" get job vegas-casino-loadgen -o jsonpath='{.status.active}' 2>/dev/null)
-  succ=$(kubectl -n "$NS" get job vegas-casino-loadgen -o jsonpath='{.status.succeeded}' 2>/dev/null)
-  if [[ "${active:-0}" -gt 0 ]]; then
-    pass "k6 load-gen job active (generating traffic)"
-  elif [[ "${succ:-0}" -gt 0 ]]; then
-    info "k6 load-gen job already completed — delete it to re-run continuous load"
+if kubectl -n "$NS" get deploy vegas-casino-loadgen >/dev/null 2>&1; then
+  ready=$(kubectl -n "$NS" get deploy vegas-casino-loadgen -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+  if [[ "${ready:-0}" -gt 0 ]]; then
+    pass "k6 load-gen running (generating traffic)"
   else
-    info "k6 load-gen job present but not yet active (check pod/init status)"
+    fail "k6 load-gen deployment not ready (check pod/init status)"
   fi
 else
-  fail "load-gen job vegas-casino-loadgen not found"
+  fail "load-gen deployment vegas-casino-loadgen not found"
 fi
 
 # --- Summary ----------------------------------------------------------------
