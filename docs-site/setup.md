@@ -40,23 +40,112 @@ PARTICIPANT_ID
     neighbor's. (Advanced: `KIND_CLUSTER_NAME` overrides it if you ever need to
     name the cluster directly; most attendees never set it.)
 
-!!! tip "Advanced track only: check `opencode` works"
-    The [advanced self-paced track](advanced/getting-started.md) drives the
-    `opencode` AI coding agent, wired at start-up to a facilitator-hosted LLM
-    proxy. If you are on that track and set the two `WORKSHOP_*` secrets, confirm
-    the agent and its proxy credential are in place:
+!!! tip "Which track are you on?"
+    The required **M0–M5** modules do **not** use `opencode` — on the main track
+    you can skip the next section and continue at
+    [Environment variables](#environment-variables). The
+    [advanced self-paced track](advanced/getting-started.md) drives the `opencode`
+    AI coding agent; if that is you, set it up **now**, here in M0, so that a later
+    failure is a *telemetry* problem, never a *tooling* one.
+
+## Advanced track only — prepare `opencode` (optional)
+
+The advanced catalog drives the **`opencode`** AI coding agent against your casino
+and collectors. Get it ready **once**, here in M0, so Step 1 onward just works.
+This whole section is skippable on the main track; [Step 0 —
+Warmup](advanced/step-0-warmup.md) walks the same ground in more depth.
+
+### 1. Confirm `opencode` answers
+
+`opencode` is baked into the Codespace image and wired at start-up to the
+facilitator-hosted LLM proxy (the two `WORKSHOP_*` secrets — see the
+[Environment variables](#environment-variables) table below):
+
+```bash
+opencode --version                 # the CLI is baked into the image
+test -f .workshop-llm.env && echo "proxy credential minted" || \
+  echo "no proxy credential — re-run: bash .devcontainer/bootstrap/dispense-llm.sh"
+opencode run "reply with the single word READY"   # returns a model completion
+```
+
+No `.workshop-llm.env`, or `opencode run` hangs or errors? Post-create setup
+skipped the dispense (the `WORKSHOP_*` secrets were absent, or the dispenser was
+unreachable) — see
+[Troubleshooting](troubleshooting.md#workshop-llm-proxy-opencode) before going on.
+Nothing else on the advanced track works until `opencode run` returns a completion.
+
+### 2. Install the observability Agent Skills
+
+The agent reasons correctly about OpenTelemetry and Dynatrace only when its
+**Agent Skills** are loaded — otherwise it guesses. The bootstrap installs three
+sets into `~/.config/opencode/skills/`; confirm them with the readiness gate, and
+if the gate fails, (re-)run the installer (it is idempotent):
+
+```bash
+bash .devcontainer/bootstrap/verify-opencode-skills.sh   # exit 0 = all three sets loadable
+bash .devcontainer/bootstrap/install-opencode-skills.sh  # (re)install if the gate failed
+opencode debug skill                                     # the raw skill list opencode sees
+```
+
+You are looking for three families in that list:
+
+| Family | Prefix | What it gives the agent |
+|---|---|---|
+| Dynatrace-for-AI | `dt-*` | DQL syntax, observability patterns, Kubernetes/cloud topology |
+| OpenTelemetry | `otel-*` | `otel-instrumentation`, `otel-ottl`, `otel-dynatrace` |
+| dtctl | `dtctl` | driving the `dtctl` CLI to read and apply Dynatrace config |
+
+!!! warning "If the OpenTelemetry (`otel-*`) family is missing — install it, don't skip it"
+    The skill install is **non-fatal** at bootstrap, so a GitHub blip can leave the
+    OpenTelemetry set out (exactly the gap to close before Step 1). On a machine
+    with Node you can add it directly from the published package:
 
     ```bash
-    opencode --version                 # the CLI is baked into the image
-    test -f .workshop-llm.env && echo "proxy credential minted" || \
-      echo "no proxy credential — re-run: bash .devcontainer/bootstrap/dispense-llm.sh"
-    opencode run "reply with the word READY"   # should return a model completion
+    npx skills add henrikrexed/observability-agent-skills@v1.0.0
     ```
 
-    No `.workshop-llm.env`? Post-create setup skipped the dispense because the
-    `WORKSHOP_*` secrets were absent, or the dispenser was unreachable — see
-    [Troubleshooting](troubleshooting.md#workshop-llm-proxy-opencode). The M0–M5
-    modules do **not** need `opencode`, so you can ignore this on the main track.
+    Both paths land the skills in `~/.config/opencode/skills/`. Re-run
+    `verify-opencode-skills.sh` until it exits 0 before you continue.
+
+### 3. Wire `opencode` to Gitea (the git loop)
+
+Advanced app-code fixes ship the same way the rest of the lab does — **edit → PR →
+merge → Argo CD sync** — but driven by `opencode` against the in-cluster Gitea.
+Set the loop up **once** now (the helper scripts are already on your `PATH`):
+
+```bash
+gitea-token.sh      # mint a scoped Gitea token -> ~/.workshop-gitea.env (0600)
+clone-casino.sh     # clone casino/casino -> ~/casino, wire creds + the DCO hook
+```
+
+Later, from inside `~/casino` after `opencode` has edited the source, ship the
+change with the PR helper (`opencode` can run it for you):
+
+```bash
+gitea-pr.sh "fix(slots): propagate trace context across the scoring hop"
+```
+
+`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+opens a pull request against `main` — printing the PR URL. **Review and merge it in
+the Gitea UI** (`http://localhost:30001/casino/casino/pulls`); merging `main` is
+what triggers the Argo CD sync. Never push straight to `main`. (Full walkthrough:
+[The environment](advanced/environment.md#the-lab-mechanic-opencode-pr-merge-sync).)
+
+### 4. One safe read-only task
+
+Prove the agent can *read* through its skills before you let it change anything —
+this lists config, it does not apply:
+
+```bash
+opencode run "Using the dtctl skill, name the Dynatrace environment dtctl is \
+pointed at and show me one read-only command to list existing dashboards. Do not \
+apply anything."
+```
+
+A good answer names your `DT_TENANT` and proposes a read verb (e.g.
+`dtctl get dashboards`) **without running a mutation**. If it tries to `apply` or
+`delete`, steer it back: *"read-only only — just show the command, don't run it."*
+That corrective reply is the exact muscle every advanced step uses.
 
 ## Environment variables
 
