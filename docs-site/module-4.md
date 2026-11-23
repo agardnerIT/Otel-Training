@@ -1,8 +1,11 @@
-# M4 — Sampling: cost/fidelity strategy
+# M4 — Sampling + cost attribution: cost/fidelity strategy
 
-**Goal:** cut ingest cost without losing the traces you would actually debug.
-Break it naively first, then build a defensible policy on the collector. 30
-minutes.
+**Goal:** cut ingest cost without losing the traces you would actually debug,
+then attribute that ingest to a **cost center** you create and wire into the
+collector pipeline. Break sampling naively first (via `opencode` + a Gitea PR),
+build the defensible policy on the collector (via `opencode` + `kubectl
+apply`), and stamp `dt.cost.costcenter` on everything the gateway exports.
+35 minutes.
 
 ## Concepts (5 min)
 
@@ -228,6 +231,128 @@ the corresponding traces no longer exist.
     15s. And watch collector memory: `num_traces` buffers decisions; on a
     small kind node, 50000 is plenty, at fleet scale it is a tuning knob.
 
+## Step 4 — the cost-center exercise: create a cost center id, wire it into the collector pipeline
+
+Sampling decides *how much* you ingest; a cost center decides *who pays for
+it*. Dynatrace Cost Allocation reads the **resource attributes**
+`dt.cost.costcenter` and `dt.cost.product` — stamp them once at the gateway
+and every span, metric, and log you export is attributable. Right now your
+telemetry lands in one undifferentiated bucket.
+
+### ① Create your cost-center id
+
+Pick the id that will identify your team's ingest in the shared tenant — your
+`PARTICIPANT_ID` keeps it unique in class:
+
+```bash
+export COST_CENTER_ID="casino-${PARTICIPANT_ID}"     # e.g. casino-jdoe-42
+echo "$COST_CENTER_ID"
+```
+
+### ② Opencode — wire the cost center into the gateway pipeline
+
+Drive the agent at the collector config with the `otel-collector` +
+`otel-ottl` skills. The reference patterns already exist in this repo —
+[`labs/advanced/step3-cost-center/cost-center-processor.yaml`](https://github.com/henrikrexed/Otel-Training/blob/main/labs/advanced/step3-cost-center/cost-center-processor.yaml)
+(static `resource/costcenter` from an env var) and
+[`labs/advanced/catalog-b2-cost-center/`](https://github.com/henrikrexed/Otel-Training/blob/main/labs/advanced/catalog-b2-cost-center/)
+(OTTL `transform/costcenter` derived from topology — see the
+[advanced catalog B2](advanced/catalog-b2-cost-center.md) for the derived
+variant):
+
+```bash
+opencode run "Using the otel-collector and otel-ottl skills: in \
+observability/collectors/gateway.yaml add a resource/costcenter processor that upserts \
+the RESOURCE attributes dt.cost.costcenter = '\${env:COST_CENTER_ID}' and \
+dt.cost.product = 'vegas-casino' (attributes action upsert, like \
+labs/advanced/step3-cost-center/cost-center-processor.yaml). Add env var COST_CENTER_ID with \
+the literal value '$COST_CENTER_ID' to the collector CR spec.env. Reference resource/costcenter \
+in ALL THREE pipelines (traces, metrics, logs) right after k8sattributes — e.g. traces: \
+[memory_limiter, k8sattributes, resource/costcenter]. Keep memory_limiter first; no batch processor."
+```
+
+### ③ Review — the diff should converge on:
+
+```yaml
+    processors:
+      resource/costcenter:
+        attributes:
+          - key: dt.cost.costcenter
+            value: ${env:COST_CENTER_ID}     # e.g. "casino-jdoe-42"
+            action: upsert
+          - key: dt.cost.product
+            value: vegas-casino
+            action: upsert
+```
+
+```yaml
+    service:
+      pipelines:
+        traces:  { processors: [memory_limiter, k8sattributes, resource/costcenter] }
+        metrics: { processors: [memory_limiter, k8sattributes, resource/costcenter, cumulative_to_delta] }
+        logs:    { processors: [memory_limiter, k8sattributes, resource/costcenter] }
+```
+
+Plus in the CR's `spec.env`:
+
+```yaml
+    env:
+      - name: COST_CENTER_ID
+        value: casino-<PARTICIPANT_ID>     # your id from step ①
+```
+
+!!! warning "If the agent gets it wrong — steer it back"
+    - **Uses the `attributes` processor or a signal-level attribute**: *"the
+      cost center is a **resource** attribute — use the `resource` processor
+      (or `transform` with `context: resource`), not `attributes`."*
+    - **Stamps a bare `cost_center`**: *"Dynatrace Cost Allocation reads
+      `dt.cost.costcenter` / `dt.cost.product` — stamp those exact keys."*
+    - **Only tags traces**: *"wire `resource/costcenter` into metrics and logs
+      too — allocation must cover all ingest."*
+    - **Forgets the env var in `spec.env`**: *"`${env:COST_CENTER_ID}` resolves
+      from the collector container env — add `COST_CENTER_ID` to `spec.env`, or
+      the attribute lands empty."*
+
+### ④ Apply — validate, kubectl apply
+
+```bash
+bash observability/validate.sh
+kubectl apply -f observability/collectors/gateway.yaml
+kubectl -n observability rollout status deploy/otel-gateway-collector
+```
+
+### ⑤ Verify — `dt.cost.costcenter` lands on telemetry
+
+Give it a minute (k6 keeps playing), then with your cluster filter:
+
+```dql
+fetch spans, from: now() - 15m
+| filter k8s.cluster.name == "<PARTICIPANT_ID>"
+| summarize spans = count() by: { dt.cost.costcenter }
+| sort spans desc
+```
+
+```dql
+fetch logs, from: now() - 15m
+| filter k8s.cluster.name == "<PARTICIPANT_ID>"
+| summarize logs = count() by: { dt.cost.costcenter }
+```
+
+- **Before:** `dt.cost.costcenter` is null on every record — one
+  undifferentiated bucket in Account Management → Cost allocation.
+- **After:** your spans **and** logs carry `dt.cost.costcenter ==
+  "casino-<PARTICIPANT_ID>"` (and `dt.cost.product == "vegas-casino"`), and the
+  Cost allocation view attributes your ingest to your cost center.
+
+!!! tip "The scalable version derives the cost center from topology"
+    A static env var is right when one team owns the gateway. When the gateway
+    ingests for many namespaces/teams, derive the cost center per record from
+    `k8s.namespace.name` / `service.name` with a `transform/costcenter` OTTL
+    processor — that is the
+    [advanced catalog B2 exercise](advanced/catalog-b2-cost-center.md)
+    (`labs/advanced/catalog-b2-cost-center/`), with the default-first
+    `shared-unallocated` guard.
+
 ## Definition of done — M4
 
 - [ ] Baseline, naive-head, and tail-sampling measurements recorded
@@ -239,5 +364,8 @@ the corresponding traces no longer exist.
       costs (decision latency, collector memory, blind spots under threshold)
 - [ ] spanmetrics RED series visible for game services
 - [ ] ERROR visibility ~unchanged vs baseline while total traces dropped
+- [ ] You created a cost-center id, wired `resource/costcenter` into all three
+      collector pipelines via `opencode`, and verified `dt.cost.costcenter`
+      lands on your spans and logs in DQL
 
-Next: [M5 — Operating at scale](module-5.md).
+Next: [M5 — Operating at scale + OpAMP/BindPlane](module-5.md).
