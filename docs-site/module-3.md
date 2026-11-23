@@ -232,7 +232,7 @@ kubectl -n observability rollout status deploy/otel-gateway-collector
 
 ### Find it
 
-Register/login as your player at http://localhost:3000 — the UI you used in
+Register/login as your player at http://localhost:30000 — the UI you used in
 M0 — then in Dynatrace open **Logs** and filter `service.name =
 vegas-frontend-service`, search for `login_audit`.
 
