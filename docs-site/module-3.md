@@ -9,8 +9,13 @@ collector. 40 minutes. This is the centerpiece module.
 A collector pipeline is `receivers → processors → exporters`, per signal
 (traces / metrics / logs). The canonical processor order:
 
-```
-memory_limiter → enrichment → filtering/transform → (aggregation) → exporter (with batching)
+```mermaid
+flowchart LR
+  rx["receivers<br/>(OTLP in)"] --> ml["memory_limiter"]
+  ml --> enr["enrichment<br/>(k8sattributes, resource)"]
+  enr --> ft["filtering / transform<br/>(filter, OTTL)"]
+  ft --> agg["(aggregation)<br/>spanmetrics · cumulativetodelta"]
+  agg --> exp["exporter<br/>(with batching in sending_queue)"]
 ```
 
 Why this order, one sentence each:
