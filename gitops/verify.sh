@@ -284,6 +284,27 @@ else
   info "otherwise confirm Argo CD (not kubectl) applied them"
 fi
 
+# --- 4. opencode -> Gitea git loop (ISI-7711, optional) ---------------------
+# Only runs when a Gitea token has been minted (~/.workshop-gitea.env present).
+# Proves opencode can drive the git loop (token auth + branch + PR round-trip)
+# without disturbing k8s/** or the running casino. Absent token = skipped (not a
+# failure) so the ISI-6796 ACs above are unaffected on environments that have
+# not opted into the opencode loop.
+hdr "4. opencode -> Gitea git loop (AC: ISI-7711, optional)"
+OPENCODE_VERIFY="$SCRIPT_DIR/opencode/verify-opencode-git.sh"
+GITEA_ENV_FILE="${WORKSHOP_GITEA_ENV:-$HOME/.workshop-gitea.env}"
+if [[ ! -f "$OPENCODE_VERIFY" ]]; then
+  info "opencode verify script not present ($OPENCODE_VERIFY) — skipping"
+elif [[ ! -f "$GITEA_ENV_FILE" ]]; then
+  info "no Gitea token yet ($GITEA_ENV_FILE absent) — run 'make gitea-token' to enable the opencode loop; skipping"
+else
+  if bash "$OPENCODE_VERIFY" | tee -a "$EVIDENCE"; then
+    pass "opencode -> Gitea git loop round-trips (token + branch + PR)"
+  else
+    fail "opencode -> Gitea git loop verification failed — see output above"
+  fi
+fi
+
 # --- Summary ----------------------------------------------------------------
 hdr "Summary"
 info "PASS=$PASS  FAIL=$FAIL"

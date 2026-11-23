@@ -15,7 +15,7 @@ ORCH := .devcontainer/bootstrap/deploy-environment.sh
 
 .DEFAULT_GOAL := help
 
-.PHONY: up up-direct reset verify dco-setup help
+.PHONY: up up-direct reset verify dco-setup gitea-token casino-clone opencode-verify help
 
 up: ## Bring up the full training environment (GitOps path)
 	bash $(ORCH)
@@ -32,6 +32,15 @@ verify: ## Re-run verification + print the M0 env-check banner
 dco-setup: ## Enable the DCO sign-off git hook (auto Signed-off-by on every commit)
 	git config core.hooksPath .githooks
 	@echo "DCO hook enabled (core.hooksPath=.githooks). Ensure git user.name/user.email are set."
+
+gitea-token: ## Mint a scoped Gitea token for opencode (writes ~/.workshop-gitea.env)
+	bash gitops/opencode/gitea-token.sh
+
+casino-clone: ## Clone casino from Gitea into ~/casino + wire git creds/hooks for opencode
+	bash gitops/opencode/clone-casino.sh
+
+opencode-verify: ## Verify the opencode -> Gitea git loop (token + branch + PR round-trip)
+	bash gitops/opencode/verify-opencode-git.sh
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
