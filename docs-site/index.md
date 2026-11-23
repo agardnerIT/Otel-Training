@@ -29,6 +29,16 @@ code — and verify each fix in the tenant.
 | 2:05–2:35 | [M4 — Sampling strategy](module-4.md) | Cut ingest cost with tail sampling; keep RED metrics with spanmetrics |
 | 2:35–2:55 | [M5 — Operating at scale](module-5.md) | Leave with the enterprise readiness checklist |
 
+## Prefer an AI agent? Try the opencode-first track
+
+The modules above teach the manual loop. The
+[advanced self-paced track](advanced/getting-started.md) covers the same casino
+defects **opencode-first**: every step follows Problem → Opencode → Verify — you
+paste a ready-made `opencode` prompt (goal + target file + skill), review the
+diff, apply, and verify in Dynatrace. Start with
+[Step 0 — Warmup](advanced/step-0-warmup.md) to wire the agent and its skills,
+then work Steps 1–7 and the exercise catalog.
+
 ## The environment
 
 Everything runs in **your GitHub Codespace** — nothing is installed on your
