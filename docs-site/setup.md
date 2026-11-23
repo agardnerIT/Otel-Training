@@ -299,7 +299,15 @@ All three UIs are forwarded to your codespace and appear, labelled, in the
 |---|---|---|
 | Casino app | http://localhost:30000 | register a player in the UI |
 | Gitea (your Git host) | http://localhost:30001 | `attendee` / `trainingpass123` |
-| Argo CD | http://localhost:30002 | `admin` / password printed at bootstrap |
+| Argo CD | http://localhost:30002 | `admin` / password: see below |
+
+**Lost the Argo CD password?** The bootstrap output is long, so it is easy to
+miss. Read it back any time:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d; echo
+```
 
 > **Using the external GitLab fork?** When the GitOps bootstrap runs with
 > `GITOPS_PROVIDER=gitlab`, the git host is **not** the in-cluster Gitea on
