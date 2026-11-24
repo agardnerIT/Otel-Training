@@ -187,7 +187,7 @@ fetch logs
 ```dql
 fetch spans
 | filter matchesPhrase(k8s.namespace.name, "observability")
-| summarize count(), by: { request.status }
+| summarize count(), by: { span.status_code }
 ```
 
 - **Before:** the pipeline is a black box — a dropped span or a saturated queue

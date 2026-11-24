@@ -58,7 +58,7 @@
     "retained_error_spans": {
       "type": "data",
       "title": "Retained error spans (tail-sampled)",
-      "query": "fetch spans, from: now() - 1h | filter matchesPhrase(k8s.namespace.name, \"observability\") | summarize kept = count(), by: { request.status }",
+      "query": "fetch spans, from: now() - 1h | filter matchesPhrase(k8s.namespace.name, \"observability\") | summarize kept = count(), by: { span.status_code }",
       "visualization": "singleValue"
     }
   },
