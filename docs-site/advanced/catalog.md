@@ -7,7 +7,8 @@ change → ③ opencode prompt ladder → ④ Review & apply → ⑤ Verify (DQL
 planted `labs/advanced/…` reference answer.
 
 Themes: **A** = traces/instrumentation · **B** = metrics/collector ·
-**C** = Dynatrace automation. Pick by the time you have and the muscle you want
+**C** = Dynatrace automation · **D** = observability-of-observability (capstone).
+Pick by the time you have and the muscle you want
 to build:
 
 | Exercise | Theme | Time | Difficulty | opencode skill | You will… |
@@ -28,6 +29,7 @@ to build:
 | [C2 — Define a reliability SLO via dtctl](catalog-c2-slo.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Turn a money-path metric into a commitment: a platform SLO with a 99% target, an error budget, and a burn rate — as code. |
 | [C3 — Metric event / Davis alert via dtctl](catalog-c3-metric-davis-alert.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Put a Davis alert on the money-path error rate, then prove it fires by breaking a dependency in a controlled scenario. |
 | [C4 — Dynatrace cost centers](catalog-c4-dynatrace-cost-center.md) | Dynatrace automation | **20m** | **med** | `dtctl` + `dt-app-dashboards` | Allocate ingest back to the team / game — showback & chargeback DQL over the `dt.cost.costcenter` tag from **B2**, plus an optional cost dashboard. |
+| [D1 — Instrumentation Score (capstone)](catalog-d1-instrumentation-score.md) | obs-of-obs | **40m** | **hard** | `dtctl` + DQL | Grade the casino's telemetry as one weighted **instrumentation score** (4 anchor rules, per service) deployed as code — the **runtime guard** that complements Step 3's build-time Weaver guard. Read the [concept](instrumentation-score-concept.md) first. |
 
 !!! tip "Prerequisites"
     All assume the base environment is up and
@@ -46,3 +48,9 @@ to build:
     internal-traces pipeline reuses the tail-sampling pattern and the
     `replicas: 1` constraint) and [C1](catalog-c1-dtctl-dashboard.md) (the
     `dtctl` dashboard-as-code flow).
+    **D1** is the **capstone** — it reuses `service.name`
+    ([Step 1](step-1-instrument-with-agents.md)), span status
+    ([A4](catalog-a4-exceptions-span-events.md)), log↔trace
+    ([A2](catalog-a2-log-trace-correlation.md)) and a bounded dimension
+    ([B4](catalog-b4-ottl-enrichment.md)) into one score, so do those first for a
+    score that lands **Good → Excellent**.
