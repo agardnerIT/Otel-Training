@@ -97,6 +97,15 @@ fetch spans, from: now() - 1h
 - [ ] The absolute error/slow/jackpot count is unchanged
 - [ ] A known error trace is still complete end-to-end
 
+!!! tip "Where next — turn this muscle on the collector itself"
+    You just loopback-tail-sampled the **casino's** traces. The same gateway can
+    emit its **own** internal traces and sample them the same way — plus
+    `otelcol_*` pipeline metrics and internal logs — so the collector observes
+    itself. That is [**B7 — Collector pipeline health**](catalog-b7-collector-health.md)
+    in the catalog, which builds directly on this step's loopback tail-sampling
+    pattern and `replicas: 1` constraint, then ships a pipeline-health dashboard
+    as code (reusing [C1](catalog-c1-dtctl-dashboard.md)).
+
 You have finished the advanced self-paced track — a warmed-up coding agent,
 money-path instrumentation, business metrics, a convention guard, cost
 attribution, cardinality control, PII redaction, and sampling, each driven
