@@ -1,9 +1,12 @@
 # Beyond the Honeymoon: OTel in Practice
 
 Welcome to the Perform hands-on training. The Vegas Casino application you are
-running today ships with deliberately broken observability. In three hours you
-take it from broken traces to a production-grade OpenTelemetry pipeline — SDK
-first, collector second — and watch every fix land in Dynatrace.
+running today ships with deliberately broken observability. This is **one
+single training guide** — a continuous module arc M0–M10 with two 15-minute
+breaks — that takes the casino from broken traces to a production-grade
+OpenTelemetry pipeline: SDK first, collector second, fleet management last.
+Every fix lands in Dynatrace, and every fix is produced by the `opencode` AI
+agent, not hand-written.
 
 ## The honeymoon problem
 
@@ -17,31 +20,36 @@ copied.
 Today you take ownership. The casino has real defects, planted on purpose. You
 diagnose them in Dynatrace, fix them in configuration — never in application
 code — and verify each fix in the tenant. And you do not hand-write the fixes:
-the `opencode` AI agent produces them, you review the diff, land it (Gitea PR
-for app manifests, `kubectl apply` for the collector), and verify with DQL —
+the `opencode` AI agent produces them, you review the diff, land it (Git host
+PR for app manifests, `kubectl apply` for the collector), and verify with DQL —
 the **Problem → Opencode → Review → Apply → Verify** loop, introduced in
 [M0](setup.md) and used by every module.
 
 ## What you will build
 
-| Hour | Module | You will… |
+One continuous arc, M0–M10, split into three segments by two 15-minute breaks
+(also marked inline at the end of M3 and M7):
+
+| Time | Module | You will… |
 |---|---|---|
-| 0:00–0:20 | [M0 — Environment setup](setup.md) | Codespace up, cluster healthy, Dynatrace connected, `opencode` + observability skills installed, casino deployed |
-| 0:20–0:50 | [M1 — Tour the broken casino](module-1.md) | Diagnose the trace-context defect; fix W3C propagation via opencode + a PR in Gitea |
-| 0:50–1:20 | [M2 — SDK configuration by file](module-2.md) | Move the Java service to declarative `otel-config.yaml`, agent-authored |
-| 1:30–2:10 | [M3 — The collector as control point](module-3.md) | Fix high-cardinality metrics and PII logs at the source and the collector, agent-driven |
-| 2:10–2:45 | [M4 — Sampling + cost attribution](module-4.md) | Tail sampling + spanmetrics; create a cost center and wire it into the collector |
-| 2:45–3:20 | [M5 — Operating at scale + OpAMP/BindPlane](module-5.md) | OpAMP bridge to BindPlane; change the pipeline centrally; readiness checklist |
+| 0:00–0:20 | [M0 — Environment setup](setup.md) | Fork the casino on GitLab (Gitea fallback), Codespace up, cluster healthy, Dynatrace connected, `opencode` + skills installed, casino deployed |
+| 0:20–0:50 | [M1 — Tour the broken casino](module-1.md) | Warm up the agent; diagnose the trace-context defect; fix W3C propagation via opencode + a PR |
+| 0:50–1:20 | [M2 — Instrument the casino](module-2.md) | Declarative `otel-config.yaml` for the Java service **and** AI-agent money-path spans on slots |
+| 1:20–1:45 | [M3 — Business metrics](advanced/step-2-business-metrics.md) | Counter + histogram on the money-path; a live "bets by outcome" dashboard tile |
+| 1:45–2:00 | **☕ Break — 15 minutes** | |
+| 2:00–2:25 | [M4 — Semantic conventions with Weaver](advanced/step-3-weaver-pipeline.md) | Versioned `casino.*` registry; watch CI go red on a rename or a high-cardinality dimension |
+| 2:25–3:05 | [M5 — The collector as control point](module-3.md) | Read the gateway pipeline; the three invariants that never change |
+| 3:05–3:30 | [M6 — Taming high-cardinality metrics](advanced/step-5-high-cardinality.md) | Find the unbounded dimension; fix at the SDK, backstop at the collector |
+| 3:30–3:55 | [M7 — Scrubbing PII from logs](advanced/step-6-pii-logs.md) | Redact email/PAN/SSN at the source and at the collector; leak-scan DQL returns zero |
+| 3:55–4:10 | **☕ Break — 15 minutes** | |
+| 4:10–4:30 | [M8 — The cost of observability](advanced/step-4-cost-of-observability.md) | Stamp `dt.cost.costcenter` at the gateway; read the ingest split per cost center |
+| 4:30–5:05 | [M9 — Sampling strategy](module-4.md) | Break naive head sampling, then tail-sample smart (errors/slow/jackpot kept) + spanmetrics |
+| 5:05–5:40 | [M10 — Operating at scale + OpAMP/BindPlane](module-5.md) | OpAMP bridge to BindPlane; change the pipeline centrally; readiness checklist |
 
-## Prefer an AI agent? Try the opencode-first track
-
-The modules above teach the manual loop. The
-[advanced self-paced track](advanced/getting-started.md) covers the same casino
-defects **opencode-first**: every step follows Problem → Opencode → Verify — you
-paste a ready-made `opencode` prompt (goal + target file + skill), review the
-diff, apply, and verify in Dynatrace. Start with
-[Step 0 — Warmup](advanced/step-0-warmup.md) to wire the agent and its skills,
-then work Steps 1–7 and the exercise catalog.
+Want more depth on any topic? The optional
+[extra exercises (catalog)](advanced/catalog.md) — themes A (traces), B
+(collector), C (Dynatrace automation), D (capstone) — hang off the same arc,
+cross-linked from the modules above.
 
 ## The environment
 
@@ -70,7 +78,8 @@ flowchart LR
   enriches and exports to Dynatrace (namespace `observability`)
 - **Dynatrace** — shared tenant; your cluster is identified by your unique
   `K8S_CLUSTER_NAME`
-- **GitOps** — an in-cluster Git host (Gitea) and Argo CD sync the `casino`
+- **GitOps** — your **GitLab fork** of the casino project (the in-cluster
+  **Gitea** is the documented offline fallback) and Argo CD sync the `casino`
   namespace. You fix defects by editing a manifest and committing — the same
   loop you would use in production
 

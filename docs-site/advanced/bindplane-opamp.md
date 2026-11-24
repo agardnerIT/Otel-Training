@@ -1,6 +1,6 @@
 # Central config: the OpAMP bridge + a BindPlane gateway
 
-_Advanced-track appendix. Prerequisite: [Step 6 — PII in logs](step-6-pii-logs.md).
+_Appendix. Prerequisite: [M7 — PII in logs](step-6-pii-logs.md).
 This page's assets live under `labs/advanced/step5-pii-redaction/bindplane-opamp/`._
 
 **Goal:** replace hand-rolled, per-collector redaction with **centrally authored**
@@ -10,13 +10,13 @@ Budget 40 minutes. This is a reproducible stretch path; the BindPlane OpAMP
 Gateway is **alpha**, so pin every version and treat the flags as version-sensitive.
 
 !!! info "Optional / stretch"
-    Step 6's collector-side redaction already satisfies its Definition of done.
+    M7's collector-side redaction already satisfies its Definition of done.
     This appendix is for cohorts who want to see fleet-wide config management —
     the pattern you reach for when regex-by-hand stops scaling.
 
 ## 1. Why central config
 
-Step 6 masked PII by hand-editing OTTL in `gateway.yaml`. That works for one
+M7 masked PII by hand-editing OTTL in `gateway.yaml`. That works for one
 collector and three PII shapes. It stops scaling the moment you have:
 
 - **New PII shapes** — every new field means another regex, re-reviewed and
@@ -157,7 +157,7 @@ Key fields in `opampbridge.yaml`:
    `ReportsEffectiveConfig: true`, so BindPlane shows the live, running config of
    `otel-gateway-collector` — confirm it now contains the pushed masking
    processor, no manual YAML edit involved.
-4. **Verify clean PII in Dynatrace.** Re-run the Step 6 leak-scan DQL; it must
+4. **Verify clean PII in Dynatrace.** Re-run the M7 leak-scan DQL; it must
    still return `leaks == 0`, now driven by the pushed config rather than the
    hand-rolled processors:
 
@@ -177,7 +177,7 @@ Key fields in `opampbridge.yaml`:
   tight. It is the one thing standing between a central-config mistake and an
   arbitrary component running in your cluster.
 - **This supersedes the hand-rolled redaction.** Once BindPlane owns the config,
-  the Step 6 `redaction` / `transform/pii` processors are the *"before BindPlane"*
+  the M7 `redaction` / `transform/pii` processors are the *"before BindPlane"*
   baseline — keep them for the exercise, but in a real fleet BindPlane is the
   single source of truth. Running both means two owners for one rule.
 - **Gateway vs direct endpoint.** Use the relay (`:4320`) for segmented /
@@ -195,4 +195,4 @@ Key fields in `opampbridge.yaml`:
 - [ ] A *Mask Sensitive Data* config pushed; `ReportsEffectiveConfig` shows it live
 - [ ] Leak-scan DQL still returns `leaks == 0`, now driven by the pushed config
 
-Back to the ladder: [Step 7 — Tail sampling](step-7-tail-sampling.md).
+Back to the ladder: [M9 — Tail sampling](../module-4.md).

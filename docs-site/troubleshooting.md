@@ -31,10 +31,10 @@ your case is not here.
 | Still nothing after filtering | Collector export broken | `kubectl -n observability logs deploy/otel-gateway-collector --tail=30` — look for `endpoint must be a valid URL` (tenant env missing) or 401/404 (token/tenant mismatch → check `DT_TENANT`/`DT_INGEST_TOKEN`) |
 | 404 on OTLP export | Wrong endpoint shape | Apps export to `otel-gateway-collector.observability.svc.cluster.local:4317` (gRPC, no path); the gateway exports to `${DT_TENANT}/api/v2/otlp` |
 | Config file edits do nothing (M2) | Env vars are ignored in file mode unless referenced `${}`; wrong `OTEL_CONFIG_FILE` path | Verify the mount (`kubectl -n casino exec deploy/vegas-casino-scoring -- cat /etc/otel/otel-config.yaml`) and the env var; check the agent picked up injection (annotation present on the *pod*, not the Deployment) |
-| Collector crash-loops after your edit (M3/M4) | Config rejected — often a processor referenced in `pipelines` but not defined, or a bool set from env | Fix the config; `bash observability/validate.sh` catches most (not all — see the CR's comments about literal bools) |
+| Collector crash-loops after your edit (M5–M9) | Config rejected — often a processor referenced in `pipelines` but not defined, or a bool set from env | Fix the config; `bash observability/validate.sh` catches most (not all — see the CR's comments about literal bools) |
 | Telemetry vanished after routing/transform step | Transform/filter on an attribute that does not exist yet | Enrichment must run before filtering — check processor order in the pipeline |
-| Errors missing under tail sampling (M4) | `decision_wait` shorter than trace duration | Raise `decision_wait` to ~15s |
-| Collector OOM / memory warnings (M4) | `num_traces` too high for the node | Lower `num_traces` or `decision_wait`; keep `memory_limiter` first |
+| Errors missing under tail sampling (M9) | `decision_wait` shorter than trace duration | Raise `decision_wait` to ~15s |
+| Collector OOM / memory warnings (M9) | `num_traces` too high for the node | Lower `num_traces` or `decision_wait`; keep `memory_limiter` first |
 
 ## Workshop LLM proxy (opencode)
 

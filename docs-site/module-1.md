@@ -4,6 +4,31 @@
 planted defect — traces that break at the slots service. You fix it with one
 line of configuration. 30 minutes.
 
+## Orientation — warm up the agent (5 min)
+
+M0 wired `opencode` to the LLM proxy, installed the three skill families
+(`dt-*`, `otel-*`, `dtctl`), and ran one safe read-only `dtctl` task. Here you
+run your **first real agent task** — explain, don't change: the gateway
+pipeline you will meet in [M5](module-3.md).
+
+```bash
+opencode run "Read observability/collectors/gateway.yaml and explain, in order, \
+every processor in the traces pipeline. For each, say what it does and why its \
+position matters. Confirm memory_limiter is first and that there is no batch processor (batching is on the exporter), and tell me \
+where a NEW processor would have to go to respect those two invariants."
+```
+
+A correct answer walks the processors top-to-bottom, states that `memory_limiter`
+is first, that there is no `batch` processor, and that a new processor belongs
+**after `k8sattributes`**. Those are the invariants you will enforce every time
+you steer the agent in later modules.
+
+!!! tip "If the agent hallucinates the file"
+    If `opencode` describes a pipeline that is not in the file (wrong exporter,
+    invented processor), reply *"only describe what is actually in
+    `observability/collectors/gateway.yaml` — quote the processors array."*
+    Grounding the agent in the real file is a habit worth building now.
+
 ## Concepts (5 min)
 
 Three ideas carry this module:
@@ -23,7 +48,7 @@ Three ideas carry this module:
 And the split of responsibility: **instrumentation lives in the SDK; the
 collector only receives what the SDK sends.** If the SDK mis-propagates or
 mislabels, no collector can fix it downstream. That is why this training fixes
-SDK problems first (M1–M2) and collector problems second (M3–M4).
+SDK problems first (M1–M2) and collector problems later (M5–M9).
 
 ## The defect hunt
 
@@ -36,7 +61,7 @@ few rounds of **slots** and one other game, then open Dynatrace.
     telemetry you are about to read is tagged with what you typed, and this
     casino ships a planted privacy defect that leaks your raw email/IP to the
     shared tenant. See [M0 §5](setup.md#5-play-the-casino) for the full
-    explanation; you fix the leak in [M3](module-3.md).
+    explanation; you fix the leak in [M7 — Scrubbing PII from logs](advanced/step-6-pii-logs.md).
 
 ### Hunt — the trace that was never whole
 
@@ -99,16 +124,18 @@ ignored.
 
 ## The fix — drive it with opencode, ship it through Gitea
 
-You do not hand-edit the manifest in the Gitea web UI. You drive the **opencode**
-coding agent to make the change, review its diff, and ship it as a **pull request
-on the in-cluster Gitea** — then Argo CD syncs the merged `main`. This is the same
-**Problem → Opencode → Verify** loop the [advanced track](advanced/environment.md#the-agent-loop-problem-opencode-verify)
-uses on every step; you will repeat it in M2–M4.
+You do not hand-edit the manifest in the git host's web UI. You drive the
+**opencode** coding agent to make the change, review its diff, and ship it as a
+**pull request / merge request on your git host** (GitLab fork by default,
+in-cluster Gitea as the offline fallback) — then Argo CD syncs the merged
+`main`. This is the same **Problem → Opencode → Review → Apply → Verify** loop
+introduced in [M0](setup.md#the-agent-loop-you-will-use-all-day); you will
+repeat it in every later module.
 
 !!! note "One-time setup — clone the casino repo for opencode"
-    Do this **once** per Codespace (it is the same setup M0 wires up, and the
-    advanced track's [environment page](advanced/environment.md#the-lab-mechanic-opencode-pr-merge-sync)).
-    The helper scripts are already on your `PATH`:
+    Do this **once** per Codespace — it is the same setup M0 wires up (see
+    [M0 §3](setup.md#3-wire-opencode-to-your-git-host-the-git-loop)).
+    On the Gitea fallback the helper scripts are already on your `PATH`:
 
     ```bash
     gitea-token.sh      # mint a scoped Gitea token -> ~/.workshop-gitea.env
@@ -160,17 +187,19 @@ before you ship it.** The one line that must flip:
 ### ④ Apply — opencode → PR → merge → Argo CD sync
 
 The casino namespace is GitOps-owned (Argo CD `selfHeal` reverts any `kubectl`
-drift), so you ship the fix through **Gitea**. Let opencode run the git loop, or
-ship it by hand from inside `~/casino`:
+drift), so you ship the fix through **your git host** — the GitLab fork by
+default, in-cluster Gitea as the offline fallback. Let opencode run the git
+loop, or ship it by hand from inside `~/casino` (Gitea fallback:
+`gitea-pr.sh "fix(slots): use W3C tracecontext,baggage propagators"`):
 
 ```bash
-# opencode can branch -> commit -> push -> PR itself; or do it by hand:
-gitea-pr.sh "fix(slots): use W3C tracecontext,baggage propagators"
+# opencode can branch -> commit -> push -> PR/MR itself; or do it by hand:
+gitea-pr.sh "fix(slots): use W3C tracecontext,baggage propagators"   # Gitea fallback
 ```
 
-`gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
-prints the PR URL. **Review and merge the PR in the Gitea UI**
-(`http://localhost:30001/casino/casino/pulls`) — merging `main` is what triggers
+The helper branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
+prints the PR URL (on the GitLab path you open the **MR** on your fork). **Review
+and merge it in your git host's UI** — merging `main` is what triggers
 the rollout. Argo CD picks up the merged commit and rolls the slots deployment
 (hit **Refresh** in the Argo CD UI at `http://localhost:30002` to force it). Watch it:
 
@@ -227,4 +256,4 @@ the slots span — no proprietary header, clean W3C parentage.
 - [ ] After the fix, the scoped DQL shows `reconnected` climbing and `orphaned`
       falling to ~0 — connected frontend → slots traces in Dynatrace
 
-Next: [M2 — SDK configuration by file](module-2.md).
+Next: [M2 — Instrument the casino](module-2.md).

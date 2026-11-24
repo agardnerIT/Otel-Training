@@ -6,7 +6,7 @@
     **Reference:** `labs/advanced/catalog-c1-dtctl-dashboard/`
 
 **Goal:** turn the business metrics you built in
-[Step 2](step-2-business-metrics.md) (and the [Catalog B1](catalog-b1-spanmetrics.md)
+[M3](step-2-business-metrics.md) (and the [Catalog B1](catalog-b1-spanmetrics.md)
 RED metrics) into a **live Dynatrace dashboard — as code**. You drive `opencode`
 with the `dtctl` skill through a prompt **ladder**; no clicking in the UI.
 
@@ -22,7 +22,7 @@ flowchart LR
 
 ## ① Problem — the metrics exist, but no one is watching them
 
-After Step 2 and B1 the casino emits first-class business and RED metrics, but
+After M3 and B1 the casino emits first-class business and RED metrics, but
 there is **no dashboard** — nobody can see bets-per-minute, wager p90, or error
 rate at a glance. A dashboard clicked together in the UI is invisible to review
 and impossible to reproduce per attendee. You want it as a **document applied
@@ -42,8 +42,8 @@ define purpose → explore the data → validate DQL → construct the JSON → 
 
 | Tile | DQL | Reads |
 |---|---|---|
-| Bets per minute by outcome | `timeseries sum(casino.bets.count), by:{casino.outcome}` | Step 2 counter |
-| Wager p90 by game | `timeseries percentile(casino.wager.amount, 90), by:{casino.game.name}` | Step 2 histogram |
+| Bets per minute by outcome | `timeseries sum(casino.bets.count), by:{casino.outcome}` | M3 counter |
+| Wager p90 by game | `timeseries percentile(casino.wager.amount, 90), by:{casino.game.name}` | M3 histogram |
 | RED — call rate | `timeseries sum(casino.red.calls), by:{span.name, status.code}` | B1 spanmetrics |
 | RED — p90 duration | `timeseries percentile(casino.red.duration, 90), by:{span.name}` | B1 spanmetrics |
 

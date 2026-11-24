@@ -13,7 +13,7 @@ with `dtctl`. You drive `opencode` through a prompt **ladder** — the
 build the dashboard.
 
 !!! note "Prerequisites"
-    Builds on [Step 7 — Tail sampling](step-7-tail-sampling.md) (the loopback
+    Builds on [M9 — Tail sampling](../module-4.md) (the loopback
     internal-traces pipeline reuses the same tail-sampling pattern and the
     `replicas: 1` single-instance constraint) and
     [Catalog C1](catalog-c1-dtctl-dashboard.md) (the `dtctl`
@@ -63,7 +63,7 @@ block (reference:
   rest to **5%**, then ships to Dynatrace.
 
 Self-traces loop back **instead of** going straight to Dynatrace precisely so
-they pass through tail sampling — the same discipline as Step 7, scoped to the
+they pass through tail sampling — the same discipline as M9, scoped to the
 collector itself. The internal pipeline keeps `memory_limiter` first and reuses
 the app pipelines' `otlp_http/dynatrace` exporter.
 
@@ -205,7 +205,7 @@ fetch spans
       application traces never reach the 5% sampler."*
     - **Scales the gateway out:** *"tail sampling must see all spans of a trace on
       one instance — keep `replicas: 1`, or front the loopback with a
-      `loadbalancing` exporter keyed on traceID (same constraint as Step 7)."*
+      `loadbalancing` exporter keyed on traceID (same constraint as M9)."*
     - **Uses the classic token header:** *"the ingest token is a dt0s16 platform
       token — use `Authorization: Bearer ${env:DT_INGEST_TOKEN}`, not
       `Api-Token`."*

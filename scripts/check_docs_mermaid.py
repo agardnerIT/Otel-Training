@@ -10,7 +10,11 @@ Run after `mkdocs build --strict`. These are the cheap, deterministic gates:
      mandates mermaid2 only, no ASCII diagrams).
   3. The mermaid runtime is loaded on pages that have a diagram.
   4. M0–M5 pages are still present in the build (Option A must not remove them).
-  5. The new advanced-track stub pages are present in the build.
+  5. The former advanced-track pages that were folded into the single guide
+     (ISI-7764) are still present in the build. The consolidated topics
+     (getting-started/environment → M0 setup, step-0 warmup → M1, step-1
+     AI-agent instrumentation → M2, step-7 tail-sampling → M9) no longer have
+     their own pages and are deliberately absent here.
 
 The actual light/dark *render* is proven separately by render_palettes.py
 (headless browser). This script needs no browser.
@@ -27,17 +31,16 @@ SITE = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("site")
 BOX_CHARS = set("─│┌┐└┘├┤┬┴┼▶▲▼◀�──")
 
 M_PAGES = [f"module-{i}" for i in range(1, 6)] + ["setup"]
+# Former advanced-track pages that survive as ordinary modules/appendices in the
+# single integrated guide (ISI-7764). getting-started, environment, step-0,
+# step-1 and step-7 were consolidated into the main arc and intentionally
+# deleted — do NOT list them here.
 ADVANCED_PAGES = [
-    "advanced/getting-started",
-    "advanced/environment",
-    "advanced/step-0-warmup",
-    "advanced/step-1-instrument-with-agents",
     "advanced/step-2-business-metrics",
     "advanced/step-3-weaver-pipeline",
     "advanced/step-4-cost-of-observability",
     "advanced/step-5-high-cardinality",
     "advanced/step-6-pii-logs",
-    "advanced/step-7-tail-sampling",
     "advanced/bindplane-opamp",
 ]
 

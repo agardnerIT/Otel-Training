@@ -1,4 +1,4 @@
-# M5 — Operating at scale + fleet management with OpAMP/BindPlane
+# M10 — Operating at scale + fleet management with OpAMP/BindPlane
 
 **Goal:** compress what you just did into an operating model you can take
 home — then do the two fleet exercises the manual workflow cannot scale to:
@@ -13,13 +13,16 @@ Every change here is still driven by `opencode` — same agent loop
 
 | Module | Defect | Fix surface | Driven by | Verified by |
 |---|---|---|---|---|
-| M1 | Trace-context break (`x-vegas-trace` vs W3C) | SDK propagators (`OTEL_PROPAGATORS`), Gitea PR | `opencode` + `otel-instrumentation` | Connected flame graph |
-| M2 | Config welded into code | Declarative `otel-config.yaml` + zero-code agent, Gitea PR | `opencode` + `otel-instrumentation` | JVM metrics + logs appear |
-| M3 | High-cardinality metric (`player_id`) | SDK knob (Gitea PR) + collector transform | `opencode` (`otel-instrumentation`, `otel-collector`/`otel-ottl`) | Series growth stops |
-| M3 | PII in logs (raw email/IP) | SDK verbosity knob (Gitea PR) (+ collector backstop) | `opencode` | Redacted `login_audit` |
-| M4 | Cost/fidelity of ingest | `tail_sampling` + `spanmetrics` on the gateway | `opencode` + `kubectl apply` | Errors kept at ~15% volume |
-| M4 | Ingest not attributable | `resource/costcenter` on the gateway (your cost-center id) | `opencode` + `kubectl apply` | `dt.cost.costcenter` in DQL |
-| M5 | Fleet config by hand | OpAMP bridge → BindPlane; pipeline changed centrally | `opencode` | Collector reconfigures live |
+| M1 | Trace-context break (`x-vegas-trace` vs W3C) | SDK propagators (`OTEL_PROPAGATORS`), PR/MR on your git host | `opencode` + `otel-instrumentation` | Connected flame graph |
+| M2 | Config welded into code; invisible money-path | Declarative `otel-config.yaml` + zero-code agent; `casino.slots.spin` span, git PR/MR | `opencode` + `otel-instrumentation` | JVM metrics + logs + money-path DQL |
+| M3 | No business metrics on the money-path | Counter + histogram in the slots service, git PR/MR | `opencode` | Bets-by-outcome dashboard tile |
+| M4 | Attribute drift / expensive metric dimensions | Weaver registry + CI check | `opencode` + `otel-semantic-conventions` | Red CI run on drift |
+| M5 | — (collector concepts, no defect) | Pipeline reading; the three invariants | — | Invariants recited |
+| M6 | High-cardinality metrics (`player_id`, `round.id`) | SDK knob (PR/MR) + collector `transform/cardinality` | `opencode` (`otel-instrumentation`, `otel-collector`/`otel-ottl`) | Series flat at ~12 |
+| M7 | PII in logs (raw email/IP/PAN/SSN) | SDK verbosity knob (PR/MR) + collector redaction | `opencode` | Leak-scan DQL `leaks == 0` |
+| M8 | Ingest not attributable | `resource/costcenter` on the gateway (your cost-center id) | `opencode` + `kubectl apply` | `dt.cost.costcenter` in DQL |
+| M9 | Cost/fidelity of ingest | `tail_sampling` + `spanmetrics` on the gateway | `opencode` + `kubectl apply` | Errors/jackpots kept at ~10–20% volume |
+| M10 | Fleet config by hand | OpAMP bridge → BindPlane; pipeline changed centrally | `opencode` | Collector reconfigures live |
 
 One pattern under all of it: **the defect was never in the application logic —
 it was in configuration nobody owned.** Observability went production-grade
@@ -63,8 +66,8 @@ fleet over OpAMP — versioned, staged, with history and rollback. Your gateway
 is operator-managed, so the OTel Operator's **OpAMPBridge** CR speaks OpAMP on
 its behalf, through the **OpAMP gateway (relay)**.
 
-The full topology and gotchas are in the advanced appendix
-[Central config: the OpAMP bridge + a BindPlane gateway](advanced/bindplane-opamp.md);
+The full topology and gotchas are in the
+[OpAMP/BindPlane appendix](advanced/bindplane-opamp.md);
 the lab assets live in
 [`labs/advanced/step5-pii-redaction/bindplane-opamp/`](https://github.com/henrikrexed/Otel-Training/blob/main/labs/advanced/step5-pii-redaction/bindplane-opamp/)
 (`opampbridge.yaml`, `opamp-gateway.yaml`). You reuse them — this exercise is
@@ -167,7 +170,7 @@ pipeline from BindPlane and watch the collector reconfigure **live** — no
 
 ### ① Opencode — author the central config change
 
-Pick a small, observable pipeline change — e.g. relax the M4 baseline sampling
+Pick a small, observable pipeline change — e.g. relax the M9 baseline sampling
 from 10% to 20%, or add a `transform` processor that stamps a
 `casino.managed_by=bindplane` resource attribute. Have the agent produce the
 collector config fragment you will push:
@@ -209,7 +212,7 @@ fetch spans, from: now() - 15m
 **The teaching point:** local edits (`kubectl apply`, git commits) are how you
 manage one collector. OpAMP + BindPlane are how you manage a **fleet** — one
 authored, versioned, staged config pushed to hundreds of collectors, with
-history and one-click rollback. Same discipline you practiced in M3/M4;
+history and one-click rollback. Same discipline you practiced in M5–M9;
 the product scales it. (In a real fleet you would not run both the local
 `gateway.yaml` and BindPlane for the same components — BindPlane is the single
 source of truth once connected.)
@@ -226,8 +229,8 @@ review its diff, then ship it:
 
 | Fix surface | How it shipped |
 |---|---|
-| **App code / casino manifests** (`k8s/**` — M1, M2, M3 source fixes, M4 head sampling) | opencode → `gitea-pr.sh` → **merge the PR in Gitea** → Argo CD syncs `main` |
-| **Collector** (`observability/collectors/gateway.yaml` — M3 backstop, M4 tail sampling) | opencode → `validate.sh` → `kubectl apply` (the `observability` namespace is not Argo-managed) |
+| **App code / casino manifests** (`k8s/**` — M1, M2, M6/M7 source fixes, M9 head sampling) | opencode → PR/MR on your git host → **merge** → Argo CD syncs `main` |
+| **Collector** (`observability/collectors/gateway.yaml` — M6/M7 backstops, M8 cost, M9 tail sampling) | opencode → `validate.sh` → `kubectl apply` (the `observability` namespace is not Argo-managed) |
 
 Steering the agent back when its diff was wrong — *"memory_limiter stays first, no
 batch processor"* — was the real skill: the DQL checkpoint told you when it was done.
@@ -251,23 +254,23 @@ Enterprise Scale*. Every item maps to something you touched today.
       validation and fail at runtime; the gateway CR in this repo documents
       two of them in comments. Read your collector's comments; write yours.
 - [ ] **Every change is a reviewed PR, not a live edit** — app-code fixes go
-      opencode → Gitea PR → merge → Argo CD sync (never `kubectl` into a
+      opencode → PR/MR on your git host → merge → Argo CD sync (never `kubectl` into a
       GitOps-owned namespace); collector fixes go opencode → validate →
       `kubectl apply`. The agent drafts; you review the diff and own the merge.
 
 ### Pipeline hygiene
 
 - [ ] **Canonical processor order** — `memory_limiter` first, no `batch` processor,
-      enrichment before filtering (M3).
+      enrichment before filtering (M5).
 - [ ] **Cardinality budget** — every metric dimension is a decision; unbounded
       dimensions are rejected at design time or dropped at the control point
-      (M3).
+      (M6).
 - [ ] **PII policy at a control point** — source-side redaction first,
-      collector-side enforcement as the backstop (M3).
+      collector-side enforcement as the backstop (M7).
 - [ ] **Sampling as an explicit policy** — keep-errors / keep-slow /
-      probabilistic-baseline, with spanmetrics so RED survives (M4).
+      probabilistic-baseline, with spanmetrics so RED survives (M9).
 - [ ] **Cost attribution at the control point** — `dt.cost.costcenter` /
-      `dt.cost.product` stamped once at the gateway, on all three signals (M4).
+      `dt.cost.product` stamped once at the gateway, on all three signals (M8).
 
 ### Fleet operations
 
@@ -275,10 +278,10 @@ Enterprise Scale*. Every item maps to something you touched today.
       and one-click rollback. You practiced the manual discipline (validate →
       apply → verify) and then productized it with **OpAMP + BindPlane**:
       deploy the bridge, connect the collector, push the pipeline change
-      centrally (M5 Exercises A/B).
+      centrally (this module's Exercises A/B).
 - [ ] **Persistent queues + backpressure** — the gateway exporter ships with
       `sending_queue` and `retry_on_failure`; size them for your backend's
-      worst bad day (M5 Step 1), and let `memory_limiter` shed before the OOM does.
+      worst bad day (Step 1 of this module), and let `memory_limiter` shed before the OOM does.
 - [ ] **Propagate, always** — W3C tracecontext everywhere; proprietary
       formats only as an explicit, documented exception (M1).
 
@@ -293,7 +296,7 @@ Enterprise Scale*. Every item maps to something you touched today.
 - The book: *Beyond the Honeymoon: OTel at Enterprise Scale* — the full
   lifecycle of a signal, from first span to fleet policy.
 
-## Definition of done — M5
+## Definition of done — M10
 
 - [ ] Scale hardening on the gateway driven by `opencode`, validated, applied
 - [ ] BindPlane OP (pinned chart) + OpAMP relay deployed; OpAMPBridge applied
@@ -307,8 +310,9 @@ Enterprise Scale*. Every item maps to something you touched today.
 
 ## Wrap-up
 
-You took a broken casino to a production-grade, centrally managed pipeline in
-three hours: every fix observed in Dynatrace, produced by the `opencode`
+You took a broken casino to a production-grade, centrally managed pipeline
+across one module arc (M0–M10, with two 15-minute breaks): every fix observed
+in Dynatrace, produced by the `opencode`
 agent, reviewed as a diff, landed through Git (app) or `kubectl` (collector),
 verified with DQL — and finally pushed from a fleet manager. Your Codespace
 and every config you wrote stay yours.

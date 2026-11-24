@@ -1,11 +1,11 @@
-# Step 3 — Controlling OTel data: breaking changes & expensive metrics in the Gitea CI
+# M4 — Semantic conventions with Weaver: guarding OTel data in CI
 
 _The `labs/advanced/` directories keep their original feature-ordinal numbering, so they run one behind these doc steps — the registry source for this page lives under `labs/advanced/step2-weaver-semconv/`, and the bring-up seeds it into your casino repo at `semconv/` (see below)._
 
-!!! info "Optional / stretch step"
+!!! info "Optional / stretch module"
     Weaver is a build-time governance guard, not a telemetry fix. If you are tight
-    on time, skim the concept and move to [Step 4](step-4-cost-of-observability.md) —
-    the money-path is already observable after Steps 1–2. Come back here when you
+    on time, skim the concept and move to [M5](../module-3.md) —
+    the money-path is already observable after M2–M3. Come back here when you
     want to stop those attributes from rotting and keep your metrics cheap.
 
 **Goal:** learn to **control your OTel data** on two axes, enforced by your lab's
@@ -26,7 +26,7 @@ that fails the pull request on either kind of drift. Budget 25 minutes.
 
 ## The concept
 
-Step 1 introduced `casino.*` attributes by hand. Without a guard, the next
+[M2](../module-2.md) introduced `casino.*` attributes by hand. Without a guard, the next
 refactor renames an attribute or sticks a per-round id onto a metric, and either
 your Dynatrace content silently breaks or your metric cardinality (and cost)
 quietly explodes. Weaver makes the conventions a **versioned registry** plus a
@@ -159,7 +159,7 @@ green again — the attribute name (and every DQL/dashboard built on it) is prot
 High cardinality is the other way OTel data gets out of control: a `*.id`
 dimension on a metric multiplies its time series by the number of distinct ids —
 one per round, per player, per request — and that is what shows up on the
-[cost-of-observability bill (Step 4)](step-4-cost-of-observability.md). The same
+[cost-of-observability bill (M8)](step-4-cost-of-observability.md). The same
 registry can refuse it.
 
 ### ③ Opencode — keep the high-cardinality guard
@@ -211,7 +211,7 @@ Weaver catches it in the PR, before a single expensive data point ships.
 ## Dynatrace validation checkpoint
 
 Weaver is a **build-time** guard, so its primary checkpoint is CI: green vs red.
-The *downstream* Dynatrace evidence: because the names are stable, the **Step 1
+The *downstream* Dynatrace evidence: because the names are stable, the **M2
 DQL keeps returning rows across releases**.
 
 ```dql
@@ -242,6 +242,6 @@ fetch spans
 - [ ] A camelCase rename is denied by policy (Part 1)
 - [ ] A high-cardinality `*.id` metric dimension is denied by policy (Part 2)
 - [ ] The **Weaver semconv check (Gitea CI)** workflow (job `weaver registry check`) runs on your PR and goes **red** on drift
-- [ ] The Step 1 DQL still returns rows (names held stable)
+- [ ] The M2 DQL still returns rows (names held stable)
 
-Next: [Step 4 — Cost of observability](step-4-cost-of-observability.md).
+Next: [M5 — The collector as control point](../module-3.md).

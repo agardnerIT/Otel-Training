@@ -5,7 +5,7 @@
     **Skill:** `otel-instrumentation` ·
     **Reference:** `labs/advanced/catalog-a4-exceptions-span-events/`
 
-**Goal:** Step 1 gave slots a `casino.slots.spin` span on the happy path. But
+**Goal:** M2 gave slots a `casino.slots.spin` span on the happy path. But
 when settlement **throws**, the current code swallows the error — the span stays
 green and the failure is invisible. Here you make the span tell the truth:
 record the exception as a **span event** carrying the semantic-convention
@@ -44,7 +44,7 @@ need **both** of the first two, not either alone:
 | Step | Call | Why |
 |---|---|---|
 | Record | `span.recordException(err)` | Adds an `exception` span **event** with `exception.type` / `exception.message` / `exception.stacktrace` (OTel exception semconv). |
-| Mark | `span.setStatus({ code: SpanStatusCode.ERROR })` | Flips the span **red** so it counts toward failure rate, alerting, and Step 7's error-trace retention. |
+| Mark | `span.setStatus({ code: SpanStatusCode.ERROR })` | Flips the span **red** so it counts toward failure rate, alerting, and M9's error-trace retention. |
 | Don't swallow | re-throw, or return 500 **after** recording | Never silently continue — the response and the trace must agree. |
 
 Target shape (`after.slots-settle.js`):
