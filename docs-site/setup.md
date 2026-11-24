@@ -4,21 +4,50 @@
 `opencode` authenticated **with the observability skills installed**, and you
 can play the casino. Budget 20 minutes; helpers circulate.
 
-!!! info "Every module M1–M5 drives the `opencode` AI agent"
+!!! info "Every module M1–M10 drives the `opencode` AI agent"
     This workshop is **opencode-first**: you never hand-author a fix from a
     blank file — you observe the symptom in Dynatrace, drive `opencode` to
-    produce the fix, review the diff, apply it (Gitea PR → Argo CD for app
-    manifests, `kubectl apply` for the collector), and verify with DQL. M0
+    produce the fix, review the diff, apply it (PR/MR on your git host → Argo CD
+    for app manifests, `kubectl apply` for the collector), and verify with DQL. M0
     makes sure the agent and its skills actually work before M1 needs them.
     The pattern is the **Problem → Opencode → Review → Apply → Verify** loop
     introduced at the end of this page and reused by every module.
 
-## 1. Start the Codespace
+## 1. Fork the casino on GitLab, then start the Codespace
 
-1. Open the training repository you received in your welcome email.
-2. Click **Code → Codespaces → Create codespace on main**.
-3. Wait for post-create setup to finish — the terminal shows the kind cluster
-   being created. Typically 3–5 minutes with a prebuild.
+The shipped default is the **Dynatrace-solution GitLab**: you fork the casino
+project into the shared GitLab and your Codespace's Argo CD syncs from
+**your** fork (`GITOPS_PROVIDER=gitlab`). The in-cluster **Gitea** is the
+documented offline / air-gapped fallback (`GITOPS_PROVIDER=gitea`) — the lab
+loop is identical either way, only the git host differs.
+
+1. Sign in to the shared GitLab at `https://<gitlab-host>/` with the account
+   from your welcome email (`<gitlab-host>` is the Dynatrace-solution GitLab
+   named in that email).
+2. Open the upstream project `https://<gitlab-host>/otel-training/casino` and
+   click **Fork** into your own namespace. You now own
+   `https://<gitlab-host>/<attendee>/casino`, containing the Kubernetes
+   manifests under `k8s/`.
+3. In **your fork** → **Settings → Access Tokens**, mint a token scoped
+   **`read_repository`** (Argo CD pulls from the fork) + **`write_repository`**
+   (you push your edits back). Copy it now — GitLab will not show it again.
+4. In GitHub → **Settings → Codespaces → Repository secrets**, set
+   `GITLAB_REPO_URL=https://<gitlab-host>/<attendee>/casino.git` and
+   `GITLAB_TOKEN=<the token from step 3>` (`GITLAB_USERNAME` is optional and
+   defaults to `oauth2`, valid for GitLab tokens over HTTPS).
+5. Open the training repository you received in your welcome email, click
+   **Code → Codespaces → Create codespace on main**, and wait for post-create
+   setup to finish — the terminal shows the kind cluster being created.
+   Typically 3–5 minutes with a prebuild. Seeing `GITOPS_PROVIDER=gitlab` plus
+   your two GitLab secrets, post-create installs Argo CD and points the casino
+   Application at **your fork**. (If the `GITLAB_*` secrets are absent, the
+   bootstrap falls back to in-cluster Gitea and prints how to switch — see
+   [§4](#4-open-the-gitops-loop).)
+
+!!! note "You never paste a token into the repo"
+    Tokens live only as Codespace secrets and are read at runtime. Nothing is
+    written to disk or committed. If you ever find yourself pasting a token
+    into a file, stop — that is not the flow.
 
 Your Codespace secrets were injected by the organizers. Check they are present:
 
@@ -47,8 +76,8 @@ PARTICIPANT_ID
     on every piece of telemetry you send. Keep it DNS-label-safe (lowercase
     letters, digits, `-` — no spaces or uppercase). **Always filter Dynatrace by
     your cluster name** — that is how you see your casino and not your
-    neighbor's. (Advanced: `KIND_CLUSTER_NAME` overrides it if you ever need to
-    name the cluster directly; most attendees never set it.)
+    neighbor's. (Override: `KIND_CLUSTER_NAME` takes precedence if you ever need
+    to name the cluster directly; most attendees never set it.)
 
 ## Prepare `opencode` (the agent every module drives)
 
@@ -74,7 +103,7 @@ No `.workshop-llm.env`, or `opencode run` hangs or errors? Post-create setup
 skipped the dispense (the `WORKSHOP_*` secrets were absent, or the dispenser was
 unreachable) — see
 [Troubleshooting](troubleshooting.md#workshop-llm-proxy-opencode) before going on.
-Nothing else on the advanced track works until `opencode run` returns a completion.
+Nothing else in this guide works until `opencode run` returns a completion.
 
 ### 2. Install the observability Agent Skills
 
@@ -99,7 +128,7 @@ You are looking for three families in that list:
 
 !!! warning "If the OpenTelemetry (`otel-*`) family is missing — install it, don't skip it"
     The skill install is **non-fatal** at bootstrap, so a GitHub blip can leave the
-    OpenTelemetry set out (exactly the gap to close before Step 1). On a machine
+    OpenTelemetry set out (exactly the gap to close before M2). On a machine
     with Node you can add it directly from the published package:
 
     ```bash
@@ -109,11 +138,23 @@ You are looking for three families in that list:
     Both paths land the skills in `~/.config/opencode/skills/`. Re-run
     `verify-opencode-skills.sh` until it exits 0 before you continue.
 
-### 3. Wire `opencode` to Gitea (the git loop)
+### 3. Wire `opencode` to your git host (the git loop)
 
-Advanced app-code fixes ship the same way the rest of the lab does — **edit → PR →
-merge → Argo CD sync** — but driven by `opencode` against the in-cluster Gitea.
-Set the loop up **once** now (the helper scripts are already on your `PATH`):
+App-code fixes ship the same way the rest of the lab does — **edit → PR/MR →
+merge → Argo CD sync** — but driven by `opencode` against your git host. Set
+the loop up **once** now.
+
+**GitLab path (the default):** clone your fork and open merge requests on it:
+
+```bash
+git clone "$GITLAB_REPO_URL" ~/casino     # auth with your GITLAB_TOKEN
+cd ~/casino && opencode
+# later, after opencode edited the source: push a branch and open an MR on
+# https://<gitlab-host>/<attendee>/casino — merging main triggers Argo CD
+```
+
+**Gitea fallback (offline / air-gapped):** the helper scripts are already on
+your `PATH`:
 
 ```bash
 gitea-token.sh      # mint a scoped Gitea token -> ~/.workshop-gitea.env (0600)
@@ -121,17 +162,20 @@ clone-casino.sh     # clone casino/casino -> ~/casino, wire creds + the DCO hook
 ```
 
 Later, from inside `~/casino` after `opencode` has edited the source, ship the
-change with the PR helper (`opencode` can run it for you):
+change (`opencode` can run the git loop for you). On the **Gitea fallback** the
+PR helper does it end to end:
 
 ```bash
 gitea-pr.sh "fix(slots): propagate trace context across the scoring hop"
 ```
 
 `gitea-pr.sh` branches `opencode/<slug>`, commits with a DCO sign-off, pushes, and
-opens a pull request against `main` — printing the PR URL. **Review and merge it in
-the Gitea UI** (`http://localhost:30001/casino/casino/pulls`); merging `main` is
-what triggers the Argo CD sync. Never push straight to `main`. (Full walkthrough:
-[The environment](advanced/environment.md#the-lab-mechanic-opencode-pr-merge-sync).)
+opens a pull request against `main` — printing the PR URL. On the **GitLab
+default** you push the branch yourself and open the **MR** in your fork's web
+UI; either way the helper/agent produces a signed-off commit on a branch. **Review and merge it in
+your git host's UI** (see [§4 — Open the GitOps loop](#4-open-the-gitops-loop) for
+the Gitea and GitLab URLs); merging `main` is what triggers the Argo CD sync.
+Never push straight to `main`. (Full walkthrough: [§4](#4-open-the-gitops-loop).)
 
 ### 4. One safe read-only task
 
@@ -147,7 +191,7 @@ apply anything."
 A good answer names your `DT_TENANT` and proposes a read verb (e.g.
 `dtctl get dashboards`) **without running a mutation**. If it tries to `apply` or
 `delete`, steer it back: *"read-only only — just show the command, don't run it."*
-That corrective reply is the exact muscle every advanced step uses.
+That corrective reply is the exact muscle every module uses.
 
 ### The agent loop you will use all day
 
@@ -194,12 +238,12 @@ at the repo root mirrors it — if anything disagrees, this table wins.
 | Variable | Type | Consumed by | Required? |
 |---|---|---|---|
 | `DT_TENANT` | Tenant base URL (`https://<id>.live.dynatrace.com`) | Operator (`<DT_TENANT>/api`) **and** OTel collectors (`<DT_TENANT>/api/v2/otlp`) — one URL, two uses | Required for all Dynatrace labs |
-| `DT_OPERATOR_TOKEN` | **Platform token** (`dt0s16`), `fleet-management:*` + `settings:objects:*` scopes | Dynatrace Operator → DynaKube `apiToken` (`deploy/dynatrace/install.sh`) | Required for K8s monitoring (M4) |
-| `DT_INGEST_TOKEN` | **Platform token** (`dt0s16`), `openpipeline:{traces,metrics,logs,events}:ingest` + `storage:metrics:write` | **Two** consumers: OTel collectors' OTLP exporter (`Bearer` header) **and** operator `dataIngestToken` | Required for telemetry export (M3/M5) |
+| `DT_OPERATOR_TOKEN` | **Platform token** (`dt0s16`), `fleet-management:*` + `settings:objects:*` scopes | Dynatrace Operator → DynaKube `apiToken` (`deploy/dynatrace/install.sh`) | Required for K8s monitoring (M10) |
+| `DT_INGEST_TOKEN` | **Platform token** (`dt0s16`), `openpipeline:{traces,metrics,logs,events}:ingest` + `storage:metrics:write` | **Two** consumers: OTel collectors' OTLP exporter (`Bearer` header) **and** operator `dataIngestToken` | Required for telemetry export (M5–M9) |
 | `DT_PLATFORM_TOKEN` | Platform token (`dt0s16`), scopes below | `dtctl` **only** — never the operator | **Optional** — dtctl labs only; everything else works without it |
 | `DT_PLATFORM_URL` | Gen3 SaaS apps URL (`https://<id>.apps.dynatrace.com`) | `dtctl` on Gen3 SaaS | Optional — derived from `DT_TENANT` when unset |
 | `PARTICIPANT_ID` | DNS-label-safe id | kind cluster name, `k8s.cluster.name`, DynaKube name | Required (blank → `otel-training`, collides in a class) |
-| `KIND_CLUSTER_NAME` | cluster name | advanced override; wins over `PARTICIPANT_ID` | Optional |
+| `KIND_CLUSTER_NAME` | cluster name | optional override; wins over `PARTICIPANT_ID` | Optional |
 
 !!! warning "The three `DT_*` tokens are all platform tokens but **not** interchangeable"
     On this Gen3 tenant `DT_OPERATOR_TOKEN`, `DT_INGEST_TOKEN`, and
@@ -214,9 +258,9 @@ at the repo root mirrors it — if anything disagrees, this table wins.
 
 ### `DT_PLATFORM_TOKEN` — scopes, user permissions, and whether you need it
 
-`DT_PLATFORM_TOKEN` is **optional**. It is used by **`dtctl` only** (the advanced
-catalog's dtctl labs — DQL, SLOs, dashboards, alerts). The whole M0–M5 path and
-every non-dtctl lab work without it, so skip it unless you are running those labs.
+`DT_PLATFORM_TOKEN` is **optional**. It is used by **`dtctl` only** (the catalog
+appendix's dtctl labs — DQL, SLOs, dashboards, alerts). The whole M0–M10 path and
+every non-dtctl exercise work without it, so skip it unless you are running those.
 
 When you do mint it, it is a **platform token (`dt0s16`)** with this **minimum
 scope set** — least-privilege for the dtctl labs (read Grail telemetry **and
@@ -252,18 +296,17 @@ instead of mid-lab.
 
 Two variables below are **not** Dynatrace tokens — they belong to the `opencode`
 LLM dispenser (unrelated to the DT tenant). They are **required from M0 on**:
-M0–M5 are opencode-first, and the agent is useless without its proxy key.
+M0–M10 are opencode-first, and the agent is useless without its proxy key.
 
 | Variable | Type | Consumed by | Required? |
 |---|---|---|---|
-| `WORKSHOP_DISPENSER_URL` | URL | `dispense-llm.sh` → `opencode` LLM proxy key | Required for the M0–M5 opencode loop |
-| `WORKSHOP_ROOM_PASSWORD` | shared secret (`X-Room-Password`) | `dispense-llm.sh` → dispenser auth | Required for the M0–M5 opencode loop |
+| `WORKSHOP_DISPENSER_URL` | URL | `dispense-llm.sh` → `opencode` LLM proxy key | Required for the M0–M10 opencode loop |
+| `WORKSHOP_ROOM_PASSWORD` | shared secret (`X-Room-Password`) | `dispense-llm.sh` → dispenser auth | Required for the M0–M10 opencode loop |
 
 !!! info "Davis CoPilot / OAuth (optional, not required)"
     If your cohort runs the optional **Davis CoPilot** exercise it uses a separate
-    Dynatrace **OAuth client** (`dt0s02`), configured in its own
-    [advanced section](advanced/getting-started.md) — it is deliberately kept out
-    of the required token set above. Most attendees do not need it.
+    Dynatrace **OAuth client** (`dt0s02`) — deliberately kept out of the required
+    token set above. Most attendees do not need it.
 
 ### Running locally (not in Codespaces)
 
@@ -369,8 +412,8 @@ bash gitops/bootstrap/bootstrap-gitops.sh
    all your telemetry from today, instead of clicking through curated UI views.
 
 !!! abstract "The one scoping rule — filter by your cluster, every time"
-    Everyone shares one Dynatrace tenant, so **every M0–M1 query opens with your
-    own cluster filter** — that is how you see your casino and not your
+    Everyone shares one Dynatrace tenant, so **every query from here on opens
+    with your own cluster filter** — that is how you see your casino and not your
     neighbor's. Thanks to `PARTICIPANT_ID`, your telemetry carries
     `k8s.cluster.name == "<PARTICIPANT_ID>"` on every span, metric, and log.
 
@@ -446,7 +489,7 @@ bash gitops/bootstrap/bootstrap-gitops.sh
 
 !!! note "Running DQL needs Grail read access"
     Notebook queries run as **you** (your signed-in session), not via a token — so
-    the whole M0–M5 path needs no `DT_PLATFORM_TOKEN`. They do need Grail **read**
+    the whole M0–M10 path needs no `DT_PLATFORM_TOKEN`. They do need Grail **read**
     scopes (`storage:spans:read`, `storage:logs:read`, …) bound to your user; on a
     shared training tenant the facilitator grants these for you. The Smartscape
     entity queries above (`smartscapeNodes …`) additionally need the
@@ -458,18 +501,60 @@ bash gitops/bootstrap/bootstrap-gitops.sh
 
 ## 4. Open the GitOps loop
 
-Your lab mechanic for the whole session: **branch → commit → push → PR in
-Gitea → merge → Argo CD deploys it** (M1 walks this end to end with `opencode`).
-No `kubectl apply` into the `casino` namespace (Argo CD's self-heal would
-revert it anyway).
+Your lab mechanic for the whole session: **branch → commit → push → PR/MR on
+your git host → merge → Argo CD deploys it** (M1 walks this end to end with
+`opencode`). No `kubectl apply` into the `casino` namespace (Argo CD's
+self-heal would revert it anyway).
 
-All three UIs are forwarded to your codespace and appear, labelled, in the
+**The shape of the lab** — everything runs in one kind cluster inside your
+Codespace:
+
+```mermaid
+flowchart LR
+  you["attendee + opencode"] -->|branch + PR/MR| git["your git host:<br/>GitLab fork (default)<br/>or in-cluster Gitea<br/>casino/casino repo"]
+  git -->|merge to main| argo["Argo CD"]
+  argo -->|sync + selfHeal| casino["casino namespace<br/>frontend, scoring, slots,<br/>roulette, dice, blackjack"]
+  operator["OTel Operator"] -->|manages| gw["otel-gateway-collector"]
+  operator -->|manages| logs["otel-logs DaemonSet"]
+  casino -. "OTLP gRPC/HTTP" .-> gw
+  logs -. "pod logs" .-> gw
+  gw -->|OTLP/HTTP| dt[("Dynatrace tenant")]
+```
+
+| Component | Namespace | Role in the lab |
+|---|---|---|
+| Casino services | `casino` | Frontend + per-game services (slots, roulette, dice, blackjack) + scoring, Redis, PostgreSQL, k6 load-gen. The thing you are observing. |
+| Your git host | external GitLab (default) / `gitea` (fallback) | Holds the `casino/casino` repo — manifests under `k8s/`, service source under `apps/casino/`. You open PRs (Gitea) / MRs (GitLab) here. |
+| Argo CD | `argocd` | Polls your fork and applies it. `selfHeal` reverts hand-drift. |
+| OTel Operator | `observability` | Manages the gateway collector and the logs DaemonSet as CRDs. |
+| Gateway collector | `observability` | The single control point — every collector fix in M5–M9 lands here. |
+| Dynatrace Operator | `dynatrace` | Kubernetes monitoring + ActiveGate. |
+
+!!! note "Lite profile — a smaller casino"
+    On a tight Codespace you can bring the casino up in its **`lite`** profile:
+    `CASINO_PROFILE=lite bash .devcontainer/bootstrap/deploy-environment.sh`.
+    Lite drops the **roulette** and **dice** services, narrows the k6 load-gen,
+    and makes the Dynatrace **ActiveGate** optional (app telemetry still flows
+    through the OTel collector). Default is **`full`**. Details:
+    `deploy/casino/README.md` in the repo.
+
+**Default path — your GitLab fork.** With `GITOPS_PROVIDER=gitlab` (the shipped
+default; set in §1) the git host is **not** the in-cluster Gitea on 30001 — open
+your GitLab fork's web URL instead (printed in the GitOps bootstrap banner).
+Ports 30000 (casino) and 30002 (Argo CD) are unchanged.
+
+**Offline / air-gapped fallback — in-cluster Gitea.** Without the `GITLAB_*`
+secrets the bootstrap runs `GITOPS_PROVIDER=gitea`; the loop is identical, only
+the git host differs.
+
+All UIs are forwarded to your codespace and appear, labelled, in the
 **Ports** panel (`Casino app` → 30000, `Git host` → 30001, `Argo CD UI` → 30002):
 
 | Endpoint | URL | Credentials |
 |---|---|---|
 | Casino app | http://localhost:30000 | register a player in the UI |
-| Gitea (your Git host) | http://localhost:30001 | `attendee` / `trainingpass123` |
+| Git host — GitLab fork (default) | `https://<gitlab-host>/<attendee>/casino` | your GitLab account from the welcome email |
+| Git host — Gitea (offline fallback) | http://localhost:30001 | `attendee` / `trainingpass123` |
 | Argo CD | http://localhost:30002 | `admin` / password: see below |
 
 **Lost the Argo CD password?** The bootstrap output is long, so it is easy to
@@ -480,17 +565,11 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
-> **Using the external GitLab fork?** When the GitOps bootstrap runs with
-> `GITOPS_PROVIDER=gitlab`, the git host is **not** the in-cluster Gitea on
-> 30001 — open your GitLab fork's web URL instead (printed in the GitOps
-> bootstrap banner). Ports 30000 (casino) and 30002 (Argo CD) are unchanged.
-
-1. Open Gitea at http://localhost:30001 and sign in (`attendee` /
-   `trainingpass123`).
-2. Find the repo `casino/casino` — it contains the Kubernetes manifests under
-   `k8s/` for the `casino` namespace. This is where you will fix defects —
-   on a branch, via a pull request (M1 shows the full loop).
-3. Open Argo CD at http://localhost:30002 — the `casino` Application shows
+1. Open your git host and sign in, then find the repo `casino/casino` — it
+   contains the Kubernetes manifests under `k8s/` for the `casino` namespace.
+   This is where you will fix defects — on a branch, via a PR/MR (M1 shows the
+   full loop).
+2. Open Argo CD at http://localhost:30002 — the `casino` Application shows
    `Healthy` / `Synced`.
 
 ## 5. Play the casino
@@ -518,11 +597,12 @@ telemetry.
     metrics, and logs flow to the shared training tenant that every attendee
     uses. And this casino ships with a planted privacy defect: the frontend runs
     `AUDIT_LOG_VERBOSITY: verbose`, so your **raw email and client IP** land in
-    `login_audit` log lines on that shared tenant until you fix it in Module 3.
+    `login_audit` log lines on that shared tenant until you fix it in
+    [M7 — Scrubbing PII from logs](advanced/step-6-pii-logs.md).
     One more reason to keep the email fake.
 
 > 30000 is published by the kind control-plane node and forwarded to the
-> codespace, the same way the Gitea (30001) and Argo CD (30002) UIs are.
+> codespace, the same way the Gitea fallback (30001) and Argo CD (30002) UIs are.
 
 Leave the casino open in a browser tab and use a terminal (+ icon) for
 everything else.
@@ -574,7 +654,7 @@ that broke.
 - [ ] `npx skills add henrikrexed/observability-agent-skills@v1.0.0` ran (or the bootstrap installer fallback), and `opencode debug skill | grep -E 'otel-|dt-|dtctl'` prints the three skill families
 - [ ] The scoped `fetch spans | filter k8s.cluster.name == "<PARTICIPANT_ID>"` query returns your casino services in Dynatrace
 - [ ] Your cluster appears as a Smartscape entity via `smartscapeNodes "K8S_CLUSTER" | filter name == "<PARTICIPANT_ID>"` in the notebook
-- [ ] Gitea reachable at http://localhost:30001, repo `casino/casino` visible
+- [ ] Your git host reachable (GitLab fork, or Gitea fallback at http://localhost:30001), repo `casino/casino` visible
 - [ ] Casino UI reachable at http://localhost:30000 and you played a round
 - [ ] `otel-gateway` log shows no export errors
 

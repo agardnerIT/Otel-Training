@@ -5,7 +5,7 @@
     **Skill:** `otel-instrumentation` ·
     **Reference:** `labs/advanced/catalog-a3-multi-language/`
 
-**Goal:** Step 1 instrumented slots in **JavaScript**. Here you apply the *same*
+**Goal:** M2 instrumented slots in **JavaScript**. Here you apply the *same*
 span pattern to a **second SDK** — the Python **roulette** service — proving the
 `casino.*` semantic-convention contract is language-agnostic. You will use
 `opencode` with the `otel-instrumentation` skill to open a `casino.roulette.spin`
@@ -17,7 +17,7 @@ agent with a numbered prompt **ladder** rather than one mega-prompt.
 
 ```mermaid
 flowchart LR
-  subgraph js["slots — JavaScript (Step 1)"]
+  subgraph js["slots — JavaScript (M2)"]
     j["casino.slots.spin<br/>casino.game.name, casino.outcome,<br/>casino.payout.amount"]
   end
   subgraph py["roulette — Python (this exercise)"]
@@ -36,7 +36,7 @@ flowchart LR
 
 ## ① Problem — roulette is invisible to the money-path DQL
 
-Slots (Step 1) emits a `casino.slots.spin` span with `casino.game.name`,
+Slots (M2) emits a `casino.slots.spin` span with `casino.game.name`,
 `casino.bet.amount`, `casino.outcome` and `casino.payout.amount`, so Dynatrace
 can slice the money path by game / outcome / payout. The Python roulette service
 runs every spin under a **generic `http_request` span only** — no domain span,
@@ -54,7 +54,7 @@ ported. Open an explicit `casino.roulette.spin` child span and set the identical
 attribute **names** slots uses (only the **values** differ: `roulette` vs
 `slots`). Mapping across the two SDKs:
 
-| JavaScript (Step 1) | Python (this exercise) |
+| JavaScript (M2) | Python (this exercise) |
 |---|---|
 | `trace.getTracer('casino-slots', '1.0.0')` | `trace.get_tracer("casino-roulette", "2.1.0")` |
 | `tracer.startActiveSpan('casino.slots.spin', fn)` | `with tracer.start_as_current_span("casino.roulette.spin")` |
@@ -88,7 +88,7 @@ Target shape (`after.roulette-spin.py`):
 !!! note "The names are the contract"
     Diverge the attribute names (`game`, `bet_amount`, `casino.roulette.outcome`)
     and you get two of everything — two dashboard tiles, two DQL filters — and
-    nothing rolls up. Matching slots exactly means Step 3's Weaver registry check
+    nothing rolls up. Matching slots exactly means M4's Weaver registry check
     guards roulette too, and the whole casino answers one query.
 
 ## ③ Drive opencode — the prompt ladder
@@ -101,7 +101,7 @@ before you let it continue.
     ```text
     Using the otel-instrumentation skill, read the Python roulette _handle_spin
     only — do not edit. It runs under a generic http_request span. Compare it to
-    how the slots service (JavaScript, Step 1) records casino.slots.spin, and tell
+    how the slots service (JavaScript, M2) records casino.slots.spin, and tell
     me which casino.* attributes roulette is missing.
     ```
     **What you should see:** the agent lists `casino.game.name`,
@@ -139,7 +139,7 @@ before you let it continue.
     ```text
     Confirm the roulette span rolls up with slots: show me that a single DQL
     filtering casino.outcome returns BOTH games, and that the Weaver registry from
-    Step 2/3 would accept casino.roulette.spin without new attribute definitions.
+    M3/3 would accept casino.roulette.spin without new attribute definitions.
     ```
     **What you should see:** the agent reasons that identical names mean one query
     covers both, and no registry change is needed.

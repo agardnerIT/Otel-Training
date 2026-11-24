@@ -1,9 +1,8 @@
 # Local CI/CD: Gitea Actions & Packages
 
-_Advanced-track appendix. Prerequisite: the base environment is up on the
-**Gitea** GitOps provider (`GITOPS_PROVIDER=gitea`), so Argo CD watches the
-in-cluster `casino/casino` repo. See [The environment](environment.md) and
-[Getting started](getting-started.md)._
+_Appendix. Prerequisite: the base environment is up on the
+**Gitea** GitOps fallback (`GITOPS_PROVIDER=gitea`), so Argo CD watches the
+in-cluster `casino/casino` repo. See [M0 — Environment setup](../setup.md)._
 
 **Goal:** close the full software-delivery loop **inside your cluster** — edit a
 casino service, let **Gitea Actions** build the image, push it to **Gitea
@@ -80,7 +79,7 @@ commit.
 Pick one service and make a change you can recognise in the running app. The
 cleanest demo is the **slots** service (`vegas-slots-service`, Node.js) — the
 same money-path service you instrumented in
-[Step 1](step-1-instrument-with-agents.md). Your goal for this lab is not the
+[M2](../module-2.md). Your goal for this lab is not the
 *content* of the change; it is proving the pipeline carries **your** bytes to a
 running pod.
 
@@ -101,7 +100,7 @@ cluster built.
 
 Work against the **in-cluster** Gitea repo (not an external fork). Clone it in
 the Codespace with the seeded admin credentials, then drive `opencode` (warmed up
-in [Step 0](step-0-warmup.md)) at the slots service:
+in [M1](../module-1.md)) at the slots service:
 
 ```bash
 git clone http://attendee:trainingpass123@localhost:30001/casino/casino.git
@@ -255,4 +254,4 @@ throwaway Kubernetes cluster.
 - [ ] You proved the running pod is **your** build (the `BUILD MARKER` log line).
 - [ ] You can explain why a new build needs a new tag in a GitOps flow.
 
-Back to the [Catalog](catalog.md) · [The environment](environment.md).
+Back to the [Catalog](catalog.md) · [The environment](../setup.md).

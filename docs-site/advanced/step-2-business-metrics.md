@@ -1,7 +1,7 @@
-# Step 2 — Business metrics
+# M3 — Business metrics
 
-**Goal:** turn the money-path you instrumented in Step 1 into **business
-metrics** you can chart and alert on. Traces answer "what happened on this one
+**Goal:** turn the money-path you instrumented in [M2](../module-2.md) into
+**business metrics** you can chart and alert on. Traces answer "what happened on this one
 spin"; metrics answer "how many bets, and how much wagered, by game and outcome,
 over time". You will run the **Problem → Opencode → Verify** loop again — this
 time adding a counter (`casino.bets.count`) and a histogram
@@ -24,7 +24,7 @@ flowchart TB
 A span is a per-event record — great for "show me this trace", expensive to
 aggregate over millions of rows. A **metric** is pre-aggregated and cheap to
 query over long windows, so it is what a dashboard or SLO reads. The casino
-money-path has rich spans after Step 1 but **no first-class business metrics**:
+money-path has rich spans after M2 but **no first-class business metrics**:
 there is no cheap way to chart "bets per minute on slots" or "wager-size
 distribution by outcome". You add two instruments:
 
@@ -33,20 +33,20 @@ distribution by outcome". You add two instruments:
 | Counter | `casino.bets.count` | Monotonic event count — bets placed, by game and outcome. Rolls up to a rate. |
 | Histogram | `casino.wager.amount` | A **distribution** — you want p50/p90/max wager, not just a sum, so a histogram (not a counter) is the right instrument. |
 
-Both carry the **same dimensions as the Step 1 span** — `casino.game.name` and
+Both carry the **same dimensions as the M2 span** — `casino.game.name` and
 `casino.outcome` — so the metric and the trace share one vocabulary (and the
-[Step 3 Weaver registry](step-3-weaver-pipeline.md) can guard both).
+[M4 Weaver registry](step-3-weaver-pipeline.md) can guard both).
 
 !!! note "Bounded dimensions only — on purpose"
     Dimension the metrics **only** by `casino.game.name` (4 values) and
     `casino.outcome` (3 values) — never by `player.id` or `round.id`. That is the
     same cardinality discipline you enforce at the gateway in
-    [Step 5](step-5-high-cardinality.md); here you simply never emit the
+    [M6](step-5-high-cardinality.md); here you simply never emit the
     unbounded labels in the first place.
 
 ## ① Problem — no business metrics on the money-path
 
-After Step 1 the slots service emits a `casino.slots.spin` span per request, but
+After M2 the slots service emits a `casino.slots.spin` span per request, but
 the `/spin` handler **never records a metric**. Reference asset (the planted
 state): `labs/advanced/step-business-metrics/before.slots-metrics.js`.
 
@@ -66,7 +66,7 @@ opencode run "Using the otel-instrumentation skill: in the vegas-slots-service \
 a Counter 'casino.bets.count' and a Histogram 'casino.wager.amount' (unit chips) \
 from a meter 'casino-slots'. On each settled spin, add 1 to the counter and \
 record the bet amount to the histogram, both with attributes casino.game.name \
-and casino.outcome — matching the Step 1 span. Do NOT add player.id or round.id. \
+and casino.outcome — matching the M2 span. Do NOT add player.id or round.id. \
 Keep the existing span and response shape."
 ```
 
@@ -87,7 +87,7 @@ Read the diff before committing. The target shape (from
   app.post('/spin', async (req, res) => {
     const bet = Number(req.body.bet);
     await tracer.startActiveSpan('casino.slots.spin', async (span) => {
-      // ... existing span attributes from Step 1 ...
+      // ... existing span attributes from M2 ...
       const outcome = draw();
       const payout = settle(bet, outcome);
       span.setAttribute('casino.outcome', outcome.kind);
@@ -112,7 +112,7 @@ Read the diff before committing. The target shape (from
 
 ## ④ Apply — opencode → PR → merge → Argo CD sync
 
-Same GitOps loop as Step 1 — the slots service is in the casino namespace, so ship
+Same GitOps loop as M2 — the slots service is in the casino namespace, so ship
 it through **Gitea** from inside `~/casino` (let opencode run the loop, or do it by
 hand):
 
@@ -163,6 +163,12 @@ chart — this is the business view a casino operator would actually watch:
     the core skill here; the agent will follow whichever you specify, so specify
     deliberately.
 
+!!! tip "Dig deeper — catalog theme C"
+    [C1 — dashboard via dtctl](catalog-c1-dtctl-dashboard.md),
+    [C2 — SLO via dtctl](catalog-c2-slo.md) and
+    [C3 — Davis alert](catalog-c3-metric-davis-alert.md) turn these business
+    metrics into version-controlled Dynatrace content.
+
 ## Definition of done
 
 - [ ] `casino.bets.count` counter and `casino.wager.amount` histogram emitted from the slots service
@@ -171,4 +177,9 @@ chart — this is the business view a casino operator would actually watch:
 - [ ] The histogram DQL returns a p90 wager per game
 - [ ] A "bets by outcome" tile is pinned to your dashboard
 
-Next: [Step 3 — Weaver pipeline](step-3-weaver-pipeline.md).
+Next: [M4 — Semantic conventions with Weaver](step-3-weaver-pipeline.md).
+
+!!! break "☕ Break — 15 minutes"
+    You have finished the first segment (M0–M3: foundations & instrumentation).
+    Stretch, refill, back in 15 — when you come back, pick up at
+    [M4 — Semantic conventions with Weaver](step-3-weaver-pipeline.md).

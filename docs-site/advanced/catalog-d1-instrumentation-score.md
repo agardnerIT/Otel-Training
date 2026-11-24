@@ -9,7 +9,7 @@
 **Goal:** grade the casino's telemetry with a single **instrumentation score** —
 a weighted average of runtime-observable rules, computed in DQL and deployed as a
 version-controlled Dynatrace dashboard. This is the **capstone**: it reuses the
-muscle from [Step 1](step-1-instrument-with-agents.md) (resource attrs),
+muscle from [M2](../module-2.md) (resource attrs),
 [A4](catalog-a4-exceptions-span-events.md) (span status),
 [A2](catalog-a2-log-trace-correlation.md) (log↔trace) and
 [B4](catalog-b4-ottl-enrichment.md) (bounded dims), and turns "did we instrument
@@ -18,7 +18,7 @@ well?" from a vibe into a **number with a band**.
 ## The concept (one paragraph)
 
 The [instrumentation score](instrumentation-score-concept.md) is the **runtime
-guard** that complements [Step 3 — Weaver](step-3-weaver-pipeline.md)'s
+guard** that complements [M4 — Weaver](step-3-weaver-pipeline.md)'s
 **build-time guard**: Weaver proves the `casino.*` contract is *defined*
 correctly before a PR merges; the score proves the live fleet actually *honors*
 it. Four anchor rules — one each from the Resource, Span, Log and Metric families
@@ -62,7 +62,7 @@ logs use `trace_id` / `span_id` (**underscore**, not dotted); spans use
 
 ### RES-001 — `service.name` present · Critical (w=40)
 
-*Builds on [Step 1](step-1-instrument-with-agents.md).* Every span must carry a
+*Builds on [M2](../module-2.md).* Every span must carry a
 resource `service.name`; without it the span is unattributable — the single most
 damaging gap, hence Critical.
 
@@ -74,7 +74,7 @@ damaging gap, hence Critical.
   | summarize total = count(), missing = countIf(isNull(service.name))
   | fieldsAdd pass_ratio = (total - missing) / total
   ```
-- **Expected:** after Step 1, `missing` ≈ 0 and `pass_ratio` ≈ 1.0.
+- **Expected:** after M2, `missing` ≈ 0 and `pass_ratio` ≈ 1.0.
 
 ### SPA — span status / errors recorded · Important (w=30)
 

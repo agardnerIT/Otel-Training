@@ -19,7 +19,7 @@ score** you can watch over time.
 ## The two guards on the same `casino.*` contract
 
 You have already met the *build-time* guard: in
-[Step 3 — Weaver](step-3-weaver-pipeline.md) a semantic-convention registry +
+[M4 — Weaver](step-3-weaver-pipeline.md) a semantic-convention registry +
 policy gate fails a pull request the moment someone renames `casino.bet.amount`
 or drops a required attribute. **Convention can't rot** — a schema violation
 never reaches `main`.
@@ -34,7 +34,7 @@ is the guard that closes it.
 ```mermaid
 flowchart LR
   contract["casino.* contract<br/>(semantic conventions)"]
-  contract --> weaver["Build-time guard — Weaver<br/>(Step 3)<br/>convention can't rot<br/>fails the PR"]
+  contract --> weaver["Build-time guard — Weaver<br/>(M4)<br/>convention can't rot<br/>fails the PR"]
   contract --> score["Runtime guard — Instrumentation Score<br/>(Lab D1, DQL over Grail)<br/>telemetry actually scores well<br/>grades the live fleet"]
   weaver -.->|same contract,<br/>two moments| score
 ```
@@ -51,7 +51,7 @@ reflects the whole telemetry surface, not just traces:
 
 | Prefix | Family | What it inspects | D1 anchor |
 |---|---|---|---|
-| `RES` | **Resource** | resource attributes on every signal | `service.name` present (builds on [Step 1](step-1-instrument-with-agents.md)) |
+| `RES` | **Resource** | resource attributes on every signal | `service.name` present (builds on [M2](../module-2.md)) |
 | `SPA` | **Span** | span structure, status, kind | status/errors recorded (builds on [A4](catalog-a4-exceptions-span-events.md)) |
 | `LOG` | **Log** | log records + correlation | log ↔ trace correlation (builds on [A2](catalog-a2-log-trace-correlation.md)) |
 | `MET` | **Metric** | metric dimensions + cardinality | required dim present + bounded (builds on [B4](catalog-b4-ottl-enrichment.md)) |

@@ -10,7 +10,7 @@ The [C1 dashboard](catalog-c1-dtctl-dashboard.md) shows you *what the numbers
 are*; an **SLO** picks one number — availability — and says "99% of
 bet-processing requests succeed over 7 days", then gives you an **error budget**
 and a **burn rate**. You build it as a `dtctl` document from the
-[Step 2](step-2-business-metrics.md) / [B1](catalog-b1-spanmetrics.md) metrics —
+[M3](step-2-business-metrics.md) / [B1](catalog-b1-spanmetrics.md) metrics —
 no clicking in the SLO app.
 
 ## The concept

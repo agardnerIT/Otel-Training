@@ -89,7 +89,7 @@ Consumer shape (`after.scoring-read-baggage.js`):
     Baggage travels in a header on **every** hop. A bounded enum (`gold` /
     `silver` / `bronze`) is ideal. **Never** put `player.id` or PII in baggage: it
     becomes a high-cardinality attribute on every downstream span (see
-    [Step 5](step-5-high-cardinality.md)) and leaks across service boundaries.
+    [M6](step-5-high-cardinality.md)) and leaks across service boundaries.
 
 !!! tip "The propagator must be registered"
     Propagation is automatic **only if** the baggage propagator is active. The

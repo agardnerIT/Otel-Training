@@ -7,7 +7,7 @@
 
 **Goal:** finance and platform cannot tell which team or game drives ingest volume
 and cost, because one shared gateway tags everything with — at best — a single
-static cost center ([Step 4](step-4-cost-of-observability.md)). You will drive
+static cost center ([M8](step-4-cost-of-observability.md)). You will drive
 `opencode` (`otel-collector` + `otel-ottl` skills) to add a `transform` processor
 that **derives** the Dynatrace cost-allocation attributes from each signal's **own
 topology** (`k8s.namespace.name` / `service.name`) — stamped on **traces, metrics,
@@ -35,13 +35,13 @@ place attributes every signal.
 !!! note "Why `dt.cost.costcenter` and not a bare `cost_center`"
     Dynatrace **Cost Allocation** recognizes the resource attributes
     `dt.cost.costcenter` and `dt.cost.product` as the showback/chargeback contract —
-    the same attributes [Step 4](step-4-cost-of-observability.md) stamps statically.
+    the same attributes [M8](step-4-cost-of-observability.md) stamps statically.
     A plain `cost_center` string would group in DQL but would **not** feed Cost
     Allocation. Instrument the *concept* "cost center"; stamp the *vendor contract*.
 
 ## ① Problem — a shared gateway can't attribute ingest
 
-[Step 4](step-4-cost-of-observability.md) stamps **one static** cost center from an
+[M8](step-4-cost-of-observability.md) stamps **one static** cost center from an
 env var — correct when one team owns the gateway. But this gateway ingests for
 **many** namespaces/teams at once (casino, scoring, the observability platform). A
 static value lumps them into one bucket, so finance cannot answer "what share of
