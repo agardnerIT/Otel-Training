@@ -219,13 +219,14 @@ catalog's dtctl labs — DQL, SLOs, dashboards, alerts). The whole M0–M5 path 
 every non-dtctl lab work without it, so skip it unless you are running those labs.
 
 When you do mint it, it is a **platform token (`dt0s16`)** with this **minimum
-scope set** — least-privilege for the dtctl labs (read Grail + manage settings
-and documents), nothing more:
+scope set** — least-privilege for the dtctl labs (read Grail telemetry **and
+Smartscape entities** + manage settings and documents), nothing more:
 
 | Scope | Why `dtctl` needs it |
 |---|---|
 | `storage:buckets:read` | list Grail buckets for DQL |
 | `storage:logs:read` · `storage:metrics:read` · `storage:spans:read` · `storage:events:read` · `storage:bizevents:read` · `storage:entities:read` | `dtctl query` / `dtctl exec` over each data kind |
+| `storage:smartscape:read` | `dtctl query` over Smartscape entities — `smartscapeNodes …` reads table `smartscape.nodes`, e.g. `smartscapeNodes "K8S_CLUSTER" \| filter name == "<PARTICIPANT_ID>"` (GH#114; live-verified, ISI-7732) |
 | `settings:objects:read` · `settings:objects:write` | create/read SLOs and metric/Davis alerts (catalog C2/C3) |
 | `document:documents:read` · `document:documents:write` | create/read dashboards & notebooks (catalog C1) |
 
@@ -233,10 +234,14 @@ and documents), nothing more:
     A Dynatrace platform token can only carry scopes its **creating user**
     already has. If your account lacks (say) `settings:objects:write`, a token
     you mint with that scope checked will still be refused it, and the dtctl
-    SLO/alert labs will 403. So the same permissions above must be bound to your
-    user in **Account Management → Identity & access management → Policies**
-    before you mint the token. On a shared training tenant the facilitator
-    normally does this for you.
+    SLO/alert labs will 403. This includes `storage:smartscape:read`: without it
+    in the token scope **or** the IAM policy, `dtctl query 'smartscapeNodes …'`
+    fails with `NOT_AUTHORIZED_FOR_TABLE … Missing OAuth scope
+    'storage:smartscape:read' on table 'smartscape.nodes'` (live-verified on a
+    Gen3 tenant 2026-11-23 — ISI-7732 / GH#114). So the same permissions above
+    must be bound to your user in **Account Management → Identity & access
+    management → Policies** before you mint the token. On a shared training
+    tenant the facilitator normally does this for you.
 
 `dtctl` talks to the **apps** host (`https://<id>.apps.dynatrace.com`), not the
 `live` tenant base. Set `DT_PLATFORM_URL` to it explicitly, or leave it blank and

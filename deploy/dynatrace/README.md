@@ -157,6 +157,47 @@ ALLOW openpipeline:traces:ingest,
 > because the grant has not propagated yet — wait and re-check rather than
 > re-minting.
 
+**`DT_PLATFORM_TOKEN`** (dtctl **only**; **platform token** `dt0s16`, **optional** —
+not read by this installer). The canonical scope table lives in
+[`docs-site/setup.md`](../../docs-site/setup.md#dt_platform_token-scopes-user-permissions-and-whether-you-need-it);
+mirrored here:
+
+| Scope | Why |
+|-------|-----|
+| `storage:buckets:read` | list Grail buckets for DQL |
+| `storage:logs:read` · `storage:metrics:read` · `storage:spans:read` · `storage:events:read` · `storage:bizevents:read` · `storage:entities:read` | `dtctl query` / `dtctl exec` over each data kind |
+| `storage:smartscape:read` | `dtctl query` over Smartscape entities — `smartscapeNodes …` reads table `smartscape.nodes`, e.g. `smartscapeNodes "K8S_CLUSTER" \| filter name == "<PARTICIPANT_ID>"` (GH#114; live-verified, ISI-7732) |
+| `settings:objects:read` · `settings:objects:write` | SLOs / metric & Davis alerts (catalog C2/C3) |
+| `document:documents:read` · `document:documents:write` | dashboards & notebooks (catalog C1) |
+
+### Copy-pasteable IAM policy (dtctl token's user)
+
+The same creating-user rule applies to `DT_PLATFORM_TOKEN`. Bind this policy to
+the user that mints it in **Account Management → Identity & access management →
+Policies** — `storage:smartscape:read` is what makes
+`dtctl query 'smartscapeNodes …'` succeed instead of failing with
+`NOT_AUTHORIZED_FOR_TABLE … Missing OAuth scope 'storage:smartscape:read' on
+table 'smartscape.nodes'` (GH#114 / #70; live-verified on a Gen3 tenant
+2026-11-23 — ISI-7732):
+
+```text
+ALLOW storage:buckets:read,
+      storage:logs:read,
+      storage:metrics:read,
+      storage:spans:read,
+      storage:events:read,
+      storage:bizevents:read,
+      storage:entities:read,
+      storage:smartscape:read,
+      settings:objects:read,
+      settings:objects:write,
+      document:documents:read,
+      document:documents:write;
+```
+
+The same 1–2 min propagation delay above applies before the dtctl token will
+pass the new scope.
+
 ### Verify the ingest path is actually working (no-data detection)
 
 A wrong/under-scoped ingest token does **not** break the cluster — the collectors
