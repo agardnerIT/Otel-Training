@@ -2,12 +2,13 @@
 
 [![docs](https://github.com/henrikrexed/Otel-Training/actions/workflows/docs.yml/badge.svg)](https://github.com/henrikrexed/Otel-Training/actions/workflows/docs.yml)
 
-A 3-hour, hands-on OpenTelemetry workshop built around the **Vegas Casino** demo app and
-delivered at Dynatrace Perform. You instrument, break, and fix a distributed system —
-learning SDK configuration, the OpenTelemetry Collector as a control point, sampling
-strategy, and cost/cardinality control — every change verified live in Dynatrace.
+One complete, hands-on OpenTelemetry guide built around the **Vegas Casino** demo app —
+a continuous **M0–M10** module arc split by two 15-minute breaks — delivered at Dynatrace
+Perform. You instrument, break, and fix a distributed system — learning SDK configuration,
+the OpenTelemetry Collector as a control point, sampling strategy, and cost/cardinality
+control — every change verified live in Dynatrace.
 
-## 📖 Read the workshop online
+## 📖 Read the guide online
 
 👉 **https://henrikrexed.github.io/Otel-Training/**
 
@@ -27,12 +28,16 @@ fix in Dynatrace.
 ## What's covered
 
 - Configuring the OpenTelemetry SDK per-service by file (sampling, exporters, resource attrs)
+- AI-agent instrumentation: the `opencode` agent produces the fixes, you review and verify
+- Business metrics on the money path (counters, histograms, live dashboard tiles)
+- Semantic conventions enforced with Weaver (versioned registry, CI gates)
 - The OpenTelemetry Collector as the control point: k8sattributes, transforms, filtering
 - Head and tail sampling: cost vs. fidelity trade-offs
 - Taming high-cardinality metrics and stripping PII from logs
+- The cost of observability
 - Hunting planted defects (broken trace context, cardinality blowups, PII) and fixing them
-- An advanced self-paced track: AI-agent instrumentation, business metrics, Weaver, cost,
-  and a catalog of extra exercises (dashboards, SLOs, Davis alerts via dtctl)
+- Optional *Extra exercises* catalog as part of the one guide: dashboards, SLOs, and Davis
+  alerts via dtctl
 
 ## How to start
 
@@ -40,21 +45,31 @@ fix in Dynatrace.
 2. Set the required secrets (see `.devcontainer/` — Dynatrace tenant + tokens, workshop room password).
 3. Wait for bootstrap to finish (kind cluster, observability, Dynatrace, GitOps).
 4. Verify the environment: `make verify`.
-5. Open the workshop and start at **M0 — Environment Setup**:
+5. Open the guide and start at **M0 — Environment Setup**:
    https://henrikrexed.github.io/Otel-Training/
 
-## Workshop modules
+## Guide modules
 
-| Module | What you do |
+One arc, M0–M10, with two 15-minute breaks. URLs are derived from the docs file path
+(see the `mkdocs.yml` nav on `main`), not from the nav M-number:
+
+| Module | URL |
 | --- | --- |
-| [M0 — Environment Setup](https://henrikrexed.github.io/Otel-Training/setup/) | Bring up the cluster, obs stack, Dynatrace, GitOps loop |
-| [M1 — Tour the broken casino](https://henrikrexed.github.io/Otel-Training/module-1/) | See the app and its missing/broken telemetry |
-| [M2 — SDK configuration by file](https://henrikrexed.github.io/Otel-Training/module-2/) | Configure the OTel SDK per service |
-| [M3 — The collector as control point](https://henrikrexed.github.io/Otel-Training/module-3/) | Shape telemetry in the Collector pipeline |
-| [M4 — Sampling: cost/fidelity](https://henrikrexed.github.io/Otel-Training/module-4/) | Head vs. tail sampling strategy |
-| [M5 — Operating at scale](https://henrikrexed.github.io/Otel-Training/module-5/) | Cardinality, PII, cost at scale |
-| [Advanced self-paced track](https://henrikrexed.github.io/Otel-Training/advanced/getting-started/) | AI-agent instrumentation, business metrics, Weaver, cost + exercise catalog |
-| [Troubleshooting](https://henrikrexed.github.io/Otel-Training/troubleshooting/) | Common environment and telemetry issues |
+| [M0 — Environment setup](https://henrikrexed.github.io/Otel-Training/setup/) | `/Otel-Training/setup/` |
+| [M1 — Tour the broken casino](https://henrikrexed.github.io/Otel-Training/module-1/) | `/Otel-Training/module-1/` |
+| [M2 — Instrument the casino](https://henrikrexed.github.io/Otel-Training/module-2/) | `/Otel-Training/module-2/` |
+| [M3 — Business metrics](https://henrikrexed.github.io/Otel-Training/advanced/step-2-business-metrics/) | `/Otel-Training/advanced/step-2-business-metrics/` |
+| ☕ Break (15 min) | — |
+| [M4 — Semantic conventions with Weaver](https://henrikrexed.github.io/Otel-Training/advanced/step-3-weaver-pipeline/) | `/Otel-Training/advanced/step-3-weaver-pipeline/` |
+| [M5 — The collector as control point](https://henrikrexed.github.io/Otel-Training/module-3/) | `/Otel-Training/module-3/` |
+| [M6 — Taming high-cardinality metrics](https://henrikrexed.github.io/Otel-Training/advanced/step-5-high-cardinality/) | `/Otel-Training/advanced/step-5-high-cardinality/` |
+| [M7 — Scrubbing PII from logs](https://henrikrexed.github.io/Otel-Training/advanced/step-6-pii-logs/) | `/Otel-Training/advanced/step-6-pii-logs/` |
+| ☕ Break (15 min) | — |
+| [M8 — The cost of observability](https://henrikrexed.github.io/Otel-Training/advanced/step-4-cost-of-observability/) | `/Otel-Training/advanced/step-4-cost-of-observability/` |
+| [M9 — Sampling strategy](https://henrikrexed.github.io/Otel-Training/module-4/) | `/Otel-Training/module-4/` |
+| [M10 — Operating at scale](https://henrikrexed.github.io/Otel-Training/module-5/) | `/Otel-Training/module-5/` |
+| [Extra exercises & appendices (optional)](https://henrikrexed.github.io/Otel-Training/advanced/catalog/) | `/Otel-Training/advanced/catalog/` |
+| [Troubleshooting](https://henrikrexed.github.io/Otel-Training/troubleshooting/) | `/Otel-Training/troubleshooting/` |
 
 ## Repository layout
 
