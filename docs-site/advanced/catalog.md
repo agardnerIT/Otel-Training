@@ -23,6 +23,7 @@ to build:
 | [B4 — OTTL enrichment (`casino.bet.tier`)](catalog-b4-ottl-enrichment.md) | metrics / collector | **20m** | **med** | `otel-collector` + `otel-ottl` | Derive a bounded bet-tier bucket from the raw bet amount with a `transform` processor — bucket a high-cardinality number so you can slice by it. |
 | [B5 — Structure unstructured logs (OTTL)](catalog-b5-ottl-log-structuring.md) | metrics / collector | **25m** | **med** | `otel-collector` + `otel-ottl` | Parse opaque casino log lines into typed `casino.*` attributes + severity with OTTL `ExtractPatterns` — make text queryable. |
 | [B6 — Metric temporality (`cumulative_to_delta`)](catalog-b6-cumulativetodelta.md) | metrics / collector | **20m** | **med** | `otel-collector` | Make the gateway's `cumulative_to_delta` explicit + targeted; learn cumulative vs delta and why Dynatrace prefers delta for rate / SLO math. |
+| [B7 — Collector pipeline health](catalog-b7-collector-health.md) | metrics / collector | **25m** | **med** | `otel-collector` + `dtctl` | Make the gateway observe itself — ship `otelcol_*` metrics, internal logs, and loopback-tail-sampled internal traces to Dynatrace, then build a pipeline-health dashboard as code. Builds on **Step 7** + **C1**. |
 | [C1 — Build a dashboard via dtctl](catalog-c1-dtctl-dashboard.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Turn your Step-2 business metrics into a live, version-controlled Dynatrace dashboard — as code. |
 | [C2 — Define a reliability SLO via dtctl](catalog-c2-slo.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Turn a money-path metric into a commitment: a platform SLO with a 99% target, an error budget, and a burn rate — as code. |
 | [C3 — Metric event / Davis alert via dtctl](catalog-c3-metric-davis-alert.md) | Dynatrace automation | **20m** | **med** | `dtctl` | Put a Davis alert on the money-path error rate, then prove it fires by breaking a dependency in a controlled scenario. |
@@ -41,3 +42,7 @@ to build:
     **B2 → C4** are a **pair** — B2 stamps the `dt.cost.costcenter` tag at the
     gateway, C4 allocates/reports on it in Dynatrace; do **B2 first**. Both build
     on the cost-allocation intro in [Step 4](step-4-cost-of-observability.md).
+    **B7** builds on both [Step 7](step-7-tail-sampling.md) (the loopback
+    internal-traces pipeline reuses the tail-sampling pattern and the
+    `replicas: 1` constraint) and [C1](catalog-c1-dtctl-dashboard.md) (the
+    `dtctl` dashboard-as-code flow).

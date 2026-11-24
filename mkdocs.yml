@@ -103,6 +103,7 @@ nav:
           - "B4 — OTTL enrichment (bet.tier) [20m][med]": advanced/catalog-b4-ottl-enrichment.md
           - "B5 — Structure logs (OTTL) [25m][med]": advanced/catalog-b5-ottl-log-structuring.md
           - "B6 — Metric temporality (delta) [20m][med]": advanced/catalog-b6-cumulativetodelta.md
+          - "B7 — Collector pipeline health [25m][med]": advanced/catalog-b7-collector-health.md
           - "C1 — Dashboard via dtctl [20m][med]": advanced/catalog-c1-dtctl-dashboard.md
           - "C2 — Reliability SLO via dtctl [20m][med]": advanced/catalog-c2-slo.md
           - "C3 — Metric event / Davis alert [20m][med]": advanced/catalog-c3-metric-davis-alert.md
