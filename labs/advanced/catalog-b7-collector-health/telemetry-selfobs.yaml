@@ -1,0 +1,110 @@
+# Catalog B7 patch — collector pipeline health (self-telemetry + loopback tail sampling).
+#
+# A collector that silently drops spans is worse than no collector: you trust a
+# signal that is quietly incomplete. The collector already emits its own
+# telemetry (otelcol_* metrics, internal logs, internal traces); this patch
+# SHIPS that self-telemetry to Dynatrace so the pipeline watches itself.
+#
+# Three signal groups, all wired through `service::telemetry`:
+#   (a) metrics — periodic OTLP push of otelcol_* to Dynatrace
+#   (b) logs    — the collector's own logs, batched, to Dynatrace
+#   (c) traces  — the collector's internal traces, exported by LOOPBACK to a
+#                 second OTLP receiver on THIS collector, where a dedicated
+#                 internal-traces pipeline tail-samples them (keep every ERROR,
+#                 5% of the boring rest) before shipping to Dynatrace.
+#
+# IMPORTANT — single-instance requirement (same as Step 7): tail_sampling must
+# see ALL spans of a trace on one collector instance. The training gateway runs
+# replicas: 1, so this holds. If you scale the gateway, the loopback pipeline
+# must be fronted by a loadbalancing exporter tier keyed on traceID, or
+# decisions are made on partial traces.
+#
+# The `${env:...}` values resolve at runtime from spec.env (DT_TENANT /
+# DT_INGEST_TOKEN) exactly like the exporter in observability/collectors/gateway.yaml.
+# Composed into that gateway, this is a drop-in overlay — see the lab README.
+
+# --- (1) A second OTLP receiver: the loopback target for self-traces ----------
+# Distinct from the app-facing otlp receiver (4317/4318). The collector's own
+# traces are pushed here and never mix with application traffic.
+receivers:
+  otlp/internal:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4319
+
+# --- (2) A tail_sampling processor DEDICATED to the collector's own traces ----
+# Lighter policy set than the money-path Step 7 sampler: the collector's spans
+# are high-volume and mostly boring, so keep every error and sample the rest to
+# 5%. Internal-traces pipeline only.
+processors:
+  tail_sampling/internal:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 200
+    policies:
+      # Keep 100% of anything the collector itself errored on (export failures,
+      # queue overflows surface here).
+      - name: internal-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      # Everything else: probabilistic 5% — the boring successful majority.
+      - name: internal-baseline
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 5
+
+# --- (3) service::telemetry — make the collector observe itself ---------------
+# Replaces the gateway's current `telemetry: { logs: { level: info } }`.
+service:
+  telemetry:
+    # (a) Self-metrics: periodic OTLP push of otelcol_* to Dynatrace. `detailed`
+    #     exposes exporter queue size/capacity, send-failure counts, receiver
+    #     accepted/refused, and process_* resource metrics.
+    metrics:
+      level: detailed
+      readers:
+        - periodic:
+            interval: 30000      # ms — one push every 30s
+            timeout: 10000
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: ${env:DT_TENANT}/api/v2/otlp
+                headers:
+                  # PLATFORM token (dt0s16) → Bearer, same contract as the
+                  # exporter. The SDK appends /v1/metrics to this base endpoint.
+                  - name: Authorization
+                    value: Bearer ${env:DT_INGEST_TOKEN}
+    # (b) Self-logs: the collector's own log stream, batched, to Dynatrace.
+    logs:
+      level: info
+      processors:
+        - batch:
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: ${env:DT_TENANT}/api/v2/otlp
+                headers:
+                  - name: Authorization
+                    value: Bearer ${env:DT_INGEST_TOKEN}
+    # (c) Self-traces: export BY LOOPBACK to the otlp/internal receiver above
+    #     (NOT straight to Dynatrace) so the internal-traces pipeline can
+    #     tail-sample them before they ship.
+    traces:
+      processors:
+        - batch:
+            exporter:
+              otlp:
+                protocol: grpc
+                endpoint: http://localhost:4319
+
+  # --- (4) The dedicated internal-traces pipeline ----------------------------
+  # Loopback receiver -> memory_limiter (always first) -> tail_sampling/internal
+  # -> the SAME Dynatrace exporter the app pipelines use. This is the ONLY
+  # consumer of otlp/internal, so application traces never reach the 5% sampler.
+  pipelines:
+    traces/internal:
+      receivers: [otlp/internal]
+      processors: [memory_limiter, tail_sampling/internal]
+      exporters: [otlp_http/dynatrace]

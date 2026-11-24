@@ -1,0 +1,76 @@
+{
+  "version": 18,
+  "name": "collector-pipeline-health",
+  "description": "OTel gateway self-telemetry: throughput, drops, exporter health, process usage, error logs, and retained error spans (Catalog B7).",
+  "variables": [],
+  "tiles": {
+    "header": {
+      "type": "markdown",
+      "title": "",
+      "content": "# 🛡️ Collector Pipeline Health\n\nThe OTel gateway observing itself (`otelcol_*` metrics, internal logs, loopback-tail-sampled internal traces). If the pipeline drops, refuses, or fails to export, it shows here — before anyone trusts an incomplete signal. Built in Catalog B7; deployed with `dtctl`."
+    },
+    "throughput": {
+      "type": "data",
+      "title": "Throughput — accepted vs refused (spans)",
+      "query": "timeseries { accepted = sum(otelcol_receiver_accepted_spans), refused = sum(otelcol_receiver_refused_spans) }, from: now() - 1h",
+      "visualization": "lineChart",
+      "visualizationSettings": {
+        "thresholds": [],
+        "chartSettings": { "gapPolicy": "connect" }
+      }
+    },
+    "drops": {
+      "type": "data",
+      "title": "Processor drops (spans + metric points)",
+      "query": "timeseries { dropped_spans = sum(otelcol_processor_dropped_spans), dropped_points = sum(otelcol_processor_dropped_metric_points) }, by: { processor }, from: now() - 1h",
+      "visualization": "lineChart"
+    },
+    "exporter_failures": {
+      "type": "data",
+      "title": "Exporter send failures",
+      "query": "timeseries failed = sum(otelcol_exporter_send_failed_spans), by: { exporter }, from: now() - 1h",
+      "visualization": "lineChart"
+    },
+    "queue_depth": {
+      "type": "data",
+      "title": "Exporter queue — size vs capacity",
+      "query": "timeseries { size = avg(otelcol_exporter_queue_size), capacity = avg(otelcol_exporter_queue_capacity) }, by: { exporter }, from: now() - 1h",
+      "visualization": "lineChart"
+    },
+    "process_mem": {
+      "type": "data",
+      "title": "Process memory (RSS)",
+      "query": "timeseries rss = avg(otelcol_process_memory_rss), from: now() - 1h",
+      "visualization": "lineChart"
+    },
+    "process_cpu": {
+      "type": "data",
+      "title": "Process CPU seconds",
+      "query": "timeseries cpu = sum(otelcol_process_cpu_seconds), from: now() - 1h",
+      "visualization": "lineChart"
+    },
+    "error_logs": {
+      "type": "data",
+      "title": "Collector ERROR logs (count / min)",
+      "query": "fetch logs, from: now() - 1h | filter matchesPhrase(k8s.namespace.name, \"observability\") | filter loglevel == \"ERROR\" | summarize count(), by: { bin(timestamp, 1m) }",
+      "visualization": "lineChart"
+    },
+    "retained_error_spans": {
+      "type": "data",
+      "title": "Retained error spans (tail-sampled)",
+      "query": "fetch spans, from: now() - 1h | filter matchesPhrase(k8s.namespace.name, \"observability\") | summarize kept = count(), by: { request.status }",
+      "visualization": "singleValue"
+    }
+  },
+  "layouts": {
+    "header":               { "x": 0,  "y": 0,  "w": 24, "h": 2 },
+    "throughput":           { "x": 0,  "y": 2,  "w": 12, "h": 6 },
+    "drops":                { "x": 12, "y": 2,  "w": 12, "h": 6 },
+    "exporter_failures":    { "x": 0,  "y": 8,  "w": 12, "h": 6 },
+    "queue_depth":          { "x": 12, "y": 8,  "w": 12, "h": 6 },
+    "process_mem":          { "x": 0,  "y": 14, "w": 8,  "h": 5 },
+    "process_cpu":          { "x": 8,  "y": 14, "w": 8,  "h": 5 },
+    "error_logs":           { "x": 16, "y": 14, "w": 8,  "h": 5 },
+    "retained_error_spans": { "x": 0,  "y": 19, "w": 6,  "h": 4 }
+  }
+}
