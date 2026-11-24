@@ -163,6 +163,13 @@ flowchart LR
     in the repo. The fully composed end-state — steps 4+5+6+7 wired in the
     correct order — is `labs/advanced/gateway-advanced.yaml`.
 
+!!! tip "Make the control point observe itself"
+    This one gateway is where every step 4–7 change lands — so when a pipeline
+    silently drops data, you want it to tell you. Catalog exercise
+    [**B7 — Collector pipeline health**](catalog-b7-collector-health.md) turns the
+    gateway's own `otelcol_*` metrics, internal logs, and (loopback-tail-sampled)
+    internal traces into Dynatrace signal, plus a pipeline-health dashboard as code.
+
 ## Dynatrace validation checkpoint
 
 Confirm the environment is live and see the planted issues you will fix:

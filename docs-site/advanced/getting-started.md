@@ -12,7 +12,11 @@ Dynatrace-solution GitLab, and a Codespace starting against that fork. Budget
     semantic-convention guard, cost, cardinality, PII, and sampling. Every step
     follows one pattern — the **Problem → Opencode → Verify** loop, where you
     drive the `opencode` AI coding agent to produce each fix — and ends with a
-    Dynatrace validation checkpoint you run yourself.
+    Dynatrace validation checkpoint you run yourself. Beyond the seven steps, the
+    [**catalog**](catalog.md) holds themed extra exercises — including
+    **collector self-observability / pipeline health**
+    ([B7](catalog-b7-collector-health.md)), where the gateway ships its own
+    `otelcol_*` metrics, internal logs, and traces to Dynatrace.
 
 ## 1. Tokens you need
 
