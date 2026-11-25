@@ -616,6 +616,36 @@ kubectl -n casino run curl-check --rm -i --restart=Never --image=curlimages/curl
 
 Expected: a health response from the frontend.
 
+### In-game cheats
+
+Every game UI ships a cheat side panel — deliberately. In roulette, the
+**Enable Cheats** button pinned to the left edge of the page opens the
+*Configuration Lab*:
+
+| Toggle | `CheatType` | Boost |
+|---|---|---|
+| 🎯 Ball Control | `ballControl` | 30% |
+| ⚙️ Wheel Bias | `wheelBias` | 25% |
+| 🧲 Magnetic Field | `magneticField` | 40% |
+| 📊 Sector Prediction | `sectorPrediction` | 35% |
+
+A toggle only *marks* the bet — the spin `POST /api/games/roulette/spin`
+leaves the browser carrying `CheatActive` / `CheatType`, and the backend
+applies the boost only while the OpenFeature flag
+**`roulette.cheat-detection`** is enabled (flip it via flagd or the
+`FLAG_ROULETTE_CHEAT_DETECTION` env var; it is on by default). When honored,
+a **multiple (spread) bet** is re-rolled in your favor with the listed
+probability. Slots, dice and blackjack ship equivalent panels (e.g. dice
+`probabilityManipulation` / `rollPrediction`, blackjack `cardCounting` /
+`dealerTell`, slots reel synchronization).
+
+The cheats exist to be *observed*: a rigged spin stamps the roulette span
+with the `game.cheat_active`, `game.cheat_type` and `game.cheat_boosted`
+attributes, so the manipulation is visible in the trace. Filter Distributed
+Tracing on `game.cheat_active = true` and compare boosted vs clean rounds —
+the [A-series catalog exercises](advanced/catalog.md) hunt exactly this kind
+of planted signal.
+
 ## 6. Verify the telemetry path
 
 Every service exports OTLP to the gateway collector, which enriches and
