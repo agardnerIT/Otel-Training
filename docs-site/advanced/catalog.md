@@ -56,6 +56,8 @@ to build:
     ([A2](catalog-a2-log-trace-correlation.md)) and a bounded dimension
     ([B4](catalog-b4-ottl-enrichment.md)) into one score, so do those first for a
     score that lands **Good → Excellent**.
+    Extra trace-hunting fuel: [M0 §5 — In-game cheats](../setup.md#in-game-cheats)
+    plant `game.cheat_*` span attributes you can hunt in the **A-series**.
 
 ## Theme D — the capstone (observability of observability)
 
