@@ -695,7 +695,30 @@ app.post('/api/games/:gameId/deal', async (req, res) => {
     span.setStatus({ code: 2, message: error.message });
     span.end();
     console.error(`[gRPC] Error calling ${gameId}.deal:`, error.message, error.stack);
-    res.status(500).json({ error: error.message, gameId });
+
+    // The bet is debited before the gRPC deal call. If that call fails, no hand
+    // was created, so refund the bet instead of silently burning the player's
+    // credits. Reaching this catch implies the debit above already ran (the
+    // balance/insufficient-funds and missing-client paths return, not throw).
+    let refundedBalance;
+    try {
+      const refundUser = req.body.Username || req.body.username || 'Anonymous';
+      let refundBet = req.body.BetAmount || req.body.betAmount || 0;
+      if (refundBet <= 0) refundBet = 10; // mirror the debit default above
+      refundedBalance = await updateUserBalance(refundUser, refundBet);
+      console.log(`[Balance] Refunded $${refundBet} to ${refundUser} after failed deal (balance now $${refundedBalance})`);
+    } catch (refundErr) {
+      console.error('[Balance] Failed to refund bet after failed deal:', refundErr.message);
+    }
+
+    // Surface the gRPC status code so the UI shows a diagnostic message
+    // (e.g. "Service unavailable") instead of a generic failure.
+    res.status(500).json({
+      error: error.message,
+      code: error.code,
+      gameId,
+      ...(refundedBalance !== undefined && { newBalance: refundedBalance, refunded: true }),
+    });
   }
 });
 
