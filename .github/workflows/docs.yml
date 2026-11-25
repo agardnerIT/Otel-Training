@@ -148,11 +148,13 @@ jobs:
                   // Raw route via github.request: the generated
                   // `rest.actions.getWorkflowRunArtifact` method name differs across
                   // octokit versions bundled with github-script (v7's octokit does
-                  // not have it), which made this step fail on every attempt.
-                  await github.request('GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts/{artifact_id}', {
+                  // not have it). Use the GLOBAL artifact endpoint — the run-scoped
+                  // one (/actions/runs/{run_id}/artifacts/{artifact_id}) 404s for
+                  // artifacts uploaded via upload-artifact@v4 (verified against run
+                  // 45649746690 with a PAT: run-scoped = 404, global = 200).
+                  await github.request('GET /repos/{owner}/{repo}/actions/artifacts/{artifact_id}', {
                     owner: context.repo.owner,
                     repo: context.repo.repo,
-                    run_id: context.runId,
                     artifact_id: artifact.id,
                   });
                   core.info(`artifact ${name} (id ${artifact.id}) fully visible after ${attempt} attempt(s)`);
