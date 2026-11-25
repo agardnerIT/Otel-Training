@@ -195,9 +195,13 @@ class BlackjackServiceImpl {
     });
 
     // Get feature flags for gameplay visibility
-    const doubleDownEnabled = await getFeatureFlag('blackjack.double-down', true);
-    const insuranceEnabled = await getFeatureFlag('blackjack.insurance', true);
-    const surrenderEnabled = await getFeatureFlag('blackjack.surrender', false);
+    // Evaluate gameplay flags concurrently so flag latency does not stack on
+    // the hot Deal path (each lookup is also timeout-capped in common/openfeature) (ISI-7828).
+    const [doubleDownEnabled, insuranceEnabled, surrenderEnabled] = await Promise.all([
+      getFeatureFlag('blackjack.double-down', true),
+      getFeatureFlag('blackjack.insurance', true),
+      getFeatureFlag('blackjack.surrender', false),
+    ]);
 
     span.setAttributes({
       'game.action': 'deal',
@@ -743,11 +747,13 @@ class BlackjackServiceImpl {
     const span = tracer.startSpan('blackjack_get_game_assets', undefined, extractedContext);
     
     try {
-      // Get feature flags for game configuration
-      const doubleDownEnabled = await getFeatureFlag('blackjack.double-down', true);
-    const insuranceEnabled = await getFeatureFlag('blackjack.insurance', true);
-    const surrenderEnabled = await getFeatureFlag('blackjack.surrender', false);
-    
+      // Get feature flags for game configuration (concurrent; each is timeout-capped) (ISI-7828)
+      const [doubleDownEnabled, insuranceEnabled, surrenderEnabled] = await Promise.all([
+        getFeatureFlag('blackjack.double-down', true),
+        getFeatureFlag('blackjack.insurance', true),
+        getFeatureFlag('blackjack.surrender', false),
+      ]);
+
     const html = generateBlackjackHTML();
     const js = generateBlackjackJS(doubleDownEnabled, insuranceEnabled, surrenderEnabled);
     const css = generateBlackjackCSS();
