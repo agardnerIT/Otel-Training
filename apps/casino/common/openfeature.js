@@ -53,6 +53,13 @@ const FLAGD_HOST = process.env.FLAGD_HOST || 'localhost';
 const FLAGD_PORT = process.env.FLAGD_PORT || 8014;
 const FLAGD_TLS = process.env.FLAGD_TLS === 'true';
 
+// flagd sits on the hot path of every game action. Cap how long a single flag
+// lookup may block so a slow/unreachable flagd degrades to the flag default
+// instead of stalling the request past the caller's gRPC deadline (ISI-7828).
+const FLAG_EVAL_TIMEOUT_MS = Number(process.env.FLAG_EVAL_TIMEOUT_MS || 1000);
+// Sentinel distinguishing a timeout from a real (possibly falsy) flag value.
+const FLAG_EVAL_TIMEOUT = Symbol('flag-eval-timeout');
+
 let client = null;
 let logger = null;
 
@@ -119,12 +126,12 @@ async function getFeatureFlag(key, defaultValue, evalContext = {}) {
   }
 
   const parentSpan = trace.getActiveSpan();
-  
-  try {
+
+  // Resolve the flag against the provider, returning the value and (when the
+  // SDK supports it) the full evaluation details. flagd/provider will
+  // automatically create spans for these calls.
+  const evaluate = async () => {
     let value;
-    // Determine flag type and get evaluation details (which includes value)
-    // flagd/provider will automatically create spans for these calls
-    // Always use getDetails methods first to get accurate reason and variant
     let evaluationDetails = null;
     if (typeof defaultValue === 'boolean') {
       if (client.getBooleanDetails) {
@@ -156,7 +163,42 @@ async function getFeatureFlag(key, defaultValue, evalContext = {}) {
         value = await client.getObjectValue(key, defaultValue, evalContext);
       }
     }
-    
+    return { value, evaluationDetails };
+  };
+
+  // Race the evaluation against a timeout so a slow flagd cannot block the
+  // request. The underlying call is allowed to finish in the background; we
+  // just stop waiting on it and fall back to the default (ISI-7828).
+  let timer = null;
+  const evalPromise = evaluate();
+  evalPromise.catch(() => {}); // swallow late rejection if the timeout wins
+  const timeoutPromise = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(FLAG_EVAL_TIMEOUT), FLAG_EVAL_TIMEOUT_MS);
+  });
+
+  try {
+    const outcome = await Promise.race([evalPromise, timeoutPromise]);
+
+    if (outcome === FLAG_EVAL_TIMEOUT) {
+      if (parentSpan) {
+        parentSpan.setAttributes({
+          [`feature_flag.${key.replace(/\./g, '_')}`]: String(defaultValue),
+          [`feature_flag.${key.replace(/\./g, '_')}.timeout`]: true,
+        });
+      }
+      console.warn(`[OpenFeature] Flag ${key} evaluation exceeded ${FLAG_EVAL_TIMEOUT_MS}ms, using default: ${defaultValue}`);
+      if (logger) {
+        logger.logWarning('Feature flag evaluation timed out - using default', {
+          flag_key: key,
+          default_value: defaultValue,
+          timeout_ms: FLAG_EVAL_TIMEOUT_MS,
+        });
+      }
+      return defaultValue;
+    }
+
+    const { value, evaluationDetails } = outcome;
+
     // Log feature flag evaluation
     if (logger) {
       if (evaluationDetails) {
@@ -205,13 +247,15 @@ async function getFeatureFlag(key, defaultValue, evalContext = {}) {
     }
     console.error(`[OpenFeature] Error getting feature flag ${key}:`, error);
     if (logger) {
-      logger.logError(error, { 
-        context: 'feature_flag_evaluation', 
-        flag_key: key, 
-        default_value: defaultValue 
+      logger.logError(error, {
+        context: 'feature_flag_evaluation',
+        flag_key: key,
+        default_value: defaultValue
       });
     }
     return defaultValue;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
