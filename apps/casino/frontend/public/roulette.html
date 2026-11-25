@@ -49,42 +49,42 @@
             border-radius: 50%;
             background: conic-gradient(
                 from 0deg,
-                #1a1a1a 0deg 9.73deg,
-                #c8102e 9.73deg 19.46deg,
-                #1a1a1a 19.46deg 29.19deg,
+                #c8102e 0deg 9.73deg,
+                #1a1a1a 9.73deg 19.46deg,
+                #c8102e 19.46deg 29.19deg,
                 #000000 29.19deg 38.92deg,
                 #c8102e 38.92deg 48.65deg,
                 #1a1a1a 48.65deg 58.38deg,
-                #000000 58.38deg 68.11deg,
-                #c8102e 68.11deg 77.84deg,
-                #1a1a1a 77.84deg 87.57deg,
-                #000000 87.57deg 97.3deg,
+                #c8102e 58.38deg 68.11deg,
+                #000000 68.11deg 77.84deg,
+                #c8102e 77.84deg 87.57deg,
+                #1a1a1a 87.57deg 97.3deg,
                 #c8102e 97.3deg 107.03deg,
-                #1a1a1a 107.03deg 116.76deg,
-                #000000 116.76deg 126.49deg,
-                #c8102e 126.49deg 136.22deg,
-                #1a1a1a 136.22deg 145.95deg,
+                #000000 107.03deg 116.76deg,
+                #c8102e 116.76deg 126.49deg,
+                #1a1a1a 126.49deg 136.22deg,
+                #c8102e 136.22deg 145.95deg,
                 #000000 145.95deg 155.68deg,
                 #c8102e 155.68deg 165.41deg,
                 #1a1a1a 165.41deg 175.14deg,
-                #000000 175.14deg 184.87deg,
-                #c8102e 184.87deg 194.6deg,
-                #1a1a1a 194.6deg 204.33deg,
-                #000000 204.33deg 214.06deg,
+                #c8102e 175.14deg 184.87deg,
+                #000000 184.87deg 194.6deg,
+                #c8102e 194.6deg 204.33deg,
+                #1a1a1a 204.33deg 214.06deg,
                 #c8102e 214.06deg 223.79deg,
-                #1a1a1a 223.79deg 233.52deg,
-                #000000 233.52deg 243.25deg,
-                #c8102e 243.25deg 252.98deg,
-                #1a1a1a 252.98deg 262.71deg,
+                #000000 223.79deg 233.52deg,
+                #c8102e 233.52deg 243.25deg,
+                #1a1a1a 243.25deg 252.98deg,
+                #c8102e 252.98deg 262.71deg,
                 #000000 262.71deg 272.44deg,
                 #c8102e 272.44deg 282.17deg,
                 #1a1a1a 282.17deg 291.9deg,
-                #000000 291.9deg 301.63deg,
-                #c8102e 301.63deg 311.36deg,
-                #1a1a1a 311.36deg 321.09deg,
-                #000000 321.09deg 330.82deg,
+                #c8102e 291.9deg 301.63deg,
+                #000000 301.63deg 311.36deg,
+                #c8102e 311.36deg 321.09deg,
+                #1a1a1a 321.09deg 330.82deg,
                 #c8102e 330.82deg 340.55deg,
-                #1a1a1a 340.55deg 350.28deg,
+                #000000 340.55deg 350.28deg,
                 #00843d 350.28deg 360deg
             );
             position: relative;
@@ -95,12 +95,7 @@
         }
         
         .roulette-wheel.spinning {
-            animation: spin 3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-        }
-        
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(1080deg); }
+            filter: brightness(1.2);
         }
         
         .wheel-pointer {
@@ -466,6 +461,30 @@
         let cheatType = 'ballControl';
         let cheatsEnabled = false;
         const redNumbers = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+
+        // European wheel order, clockwise: conic-gradient segment s (s = 0 is the
+        // first slice clockwise from the top marker, s = 36 ends at the marker)
+        // holds WHEEL_ORDER[(s + 1) % 37], so 0 sits in the green slice left of the marker.
+        const WHEEL_ORDER = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+        const SEGMENT_ANGLE = 360 / 37;
+        let wheelRotation = 0;
+
+        // Rotate the wheel forward so the top marker lands on the given number's
+        // pocket. Each of the 37 possible results has its own landing angle.
+        function rotateWheelTo(number) {
+            const wheel = document.getElementById('rouletteWheel');
+            const idx = WHEEL_ORDER.indexOf(Number(number));
+            let delta = 360 * 3;
+            if (idx !== -1) {
+                const segment = (idx + 36) % 37;
+                const pocketCenter = (segment + 0.5) * SEGMENT_ANGLE;
+                const targetMod = (360 - pocketCenter % 360) % 360;
+                const currentMod = ((wheelRotation % 360) + 360) % 360;
+                delta += ((targetMod - currentMod) % 360 + 360) % 360;
+            }
+            wheelRotation += delta;
+            wheel.style.transform = 'rotate(' + wheelRotation + 'deg)';
+        }
         
         // Deprecated: checkCheatFeatureFlag removed
         // Cheat controls are always visible in the UI
@@ -804,9 +823,11 @@
             spinBtn.disabled = true;
             spinBtn.textContent = 'SPINNING...';
             
-            // Add spinning animation
+            // Start the spin; the final landing angle is applied when the result arrives
             const wheel = document.getElementById('rouletteWheel');
             wheel.classList.add('spinning');
+            wheelRotation += 360 * 2;
+            wheel.style.transform = 'rotate(' + wheelRotation + 'deg)';
             
             // Prepare request - roulette service expects specific format
             let requestBody;
@@ -878,6 +899,9 @@
                 
                 const result = await response.json();
                 
+                // Land the wheel on the winning number's pocket
+                rotateWheelTo(result.winningNumber !== undefined ? result.winningNumber : result.winning_number);
+
                 // Wait for animation to complete
                 setTimeout(() => {
                     wheel.classList.remove('spinning');
