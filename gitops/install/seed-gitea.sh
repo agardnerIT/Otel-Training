@@ -122,6 +122,23 @@ if [[ "$REPO_OK" -ne 1 ]]; then
 fi
 log "casino repo '$CASINO_ORG/$CASINO_REPO' confirmed reachable with admin creds"
 
+# 3b) Explicitly enable the repo-level Actions unit (ISI-7904). Global
+# `[actions] ENABLED=true` (gitea.yaml) turns the feature on server-wide and
+# gitea 1.22's DEFAULT_REPO_UNITS *does* include repo.actions, so an API-created
+# repo normally inherits it — but that is an implicit default we do not control:
+# a customised DEFAULT_REPO_UNITS, a repo that predated enablement, or a future
+# image default-unit change would leave Actions OFF on casino/casino, and the only
+# symptom is the exact "The workflow has no runs yet" this ticket diagnoses (no
+# run is ever created, unlike a 0-runner cluster which queues the run "Waiting").
+# Belt-and-suspenders: PATCH has_actions=true so the Actions unit is ON regardless
+# of the server default. Non-fatal + idempotent (a repeat PATCH is a no-op).
+if api -X PATCH "$GITEA_URL/api/v1/repos/$CASINO_ORG/$CASINO_REPO" \
+     -d '{"has_actions":true}' >/dev/null 2>&1; then
+  log "Actions unit enabled on '$CASINO_ORG/$CASINO_REPO' (has_actions=true)"
+else
+  warn "could not PATCH has_actions=true on '$CASINO_ORG/$CASINO_REPO' — if the Actions tab stays empty, enable Actions in the repo Settings (non-fatal; the workflows are still seeded)"
+fi
+
 # 4) Push the canonical manifests.
 if [[ ! -d "$CASINO_MANIFESTS_DIR" ]]; then
   echo "ERROR: CASINO_MANIFESTS_DIR not found: $CASINO_MANIFESTS_DIR" >&2
