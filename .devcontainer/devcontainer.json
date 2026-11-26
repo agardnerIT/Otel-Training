@@ -27,6 +27,14 @@
       "installZsh": true,
       "configureZshAsDefaultShell": false,
       "username": "vscode"
+    },
+    // Node (LTS) provides `npx` so the M0 warmup's taught one-liner
+    // `npx skills add henrikrexed/observability-agent-skills@v1.0.0` works
+    // interactively (ISI-7846 — attendees hit `bash: npx: command not found`).
+    // The bootstrap installer (install-opencode-skills.sh) stays the
+    // deterministic, offline-safe fallback and does NOT depend on npx.
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
     }
   },
 

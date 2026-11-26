@@ -33,9 +33,12 @@
 # precedence order): ~/.claude/skills, ~/.agents/skills, ~/.config/opencode/skills
 # (primary). The upstream convenience command is `npx skills add <owner>/<repo>`
 # (vercel-labs/skills), which auto-detects agents and writes into whichever one
-# it finds. We do NOT rely on that here for two concrete reasons:
-#   1. The devcontainer base image is node-free (apt installs curl/git/jq only;
-#      see .devcontainer/Dockerfile) — `npx` is not available for attendees.
+# it finds. `npx` IS available to attendees (the devcontainer adds the Node
+# feature so the M0 warmup's `npx skills add` one-liner works — ISI-7846), but
+# we still do NOT rely on it for the BOOTSTRAP path, for two concrete reasons:
+#   1. Offline/air-gapped safety: this installer must run non-interactively at
+#      create time even when npm's registry is blocked; it only needs the GitHub
+#      release tarball (same curl+tar as install-tools.sh).
 #   2. Auto-detect is non-deterministic across opencode versions and clients.
 # So we resolve the detail explicitly: fetch the pinned release tarball with the
 # same curl+tar already used by install-tools.sh and copy the skill directories
