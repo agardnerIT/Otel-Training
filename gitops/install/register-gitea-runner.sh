@@ -45,16 +45,28 @@ log "2/4 generating a global runner-registration token from the Gitea pod"
 POD="$($KUBECTL -n "$GITEA_NS" get pod -l app.kubernetes.io/name=gitea \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
 TOKEN=""
+GEN_OUT=""
 if [[ -n "$POD" ]]; then
-  # `gitea actions generate-runner-token` prints a reusable global token. The
-  # exec inherits the pod env (GITEA__* config) so it targets the same DB.
-  TOKEN="$($KUBECTL -n "$GITEA_NS" exec "$POD" -- \
-            gitea actions generate-runner-token 2>/dev/null \
-            | tr -d '\r' | grep -oE '[A-Za-z0-9]{32,}' | tail -n1 || true)"
+  # `gitea actions generate-runner-token` prints a reusable global token.
+  #
+  # CRITICAL (same trap ISI-7566 fixed in seed-gitea.sh): gitea/gitea:1.22.6 runs
+  # the container as root, and Gitea *fatally refuses* to run its CLI as root
+  # ("Gitea is not supposed to be run as root"). A plain `kubectl exec -- gitea ...`
+  # therefore ALWAYS errors on stderr and prints nothing to stdout — and the old
+  # `2>/dev/null` swallowed that error, leaving TOKEN empty and the runner offline
+  # with zero bootstrap signal (ISI-7898). Exec the CLI as the unprivileged 'git'
+  # user via `su git -c`, and point it at the baked app.ini explicitly (su drops
+  # the GITEA__* env so the binary would otherwise not find the SQLite DB).
+  # Capture stdout+stderr together so a genuine failure is visible, then extract
+  # the 40-char hex token from whatever was printed.
+  GEN_OUT="$($KUBECTL -n "$GITEA_NS" exec "$POD" -- su git -c \
+              "gitea --config /data/gitea/conf/app.ini actions generate-runner-token" 2>&1 || true)"
+  TOKEN="$(printf '%s' "$GEN_OUT" | tr -d '\r' | grep -oE '[A-Za-z0-9]{32,}' | tail -n1 || true)"
 fi
 if [[ -z "$TOKEN" ]]; then
-  warn "could not generate a registration token (is Gitea Actions enabled in gitea.yaml?)."
-  warn "runner will stay offline until a token is provided — non-fatal, bootstrap continues."
+  warn "could not generate a registration token — the runner will stay offline (non-fatal)."
+  warn "gitea output was: ${GEN_OUT:-<empty> (no gitea pod?)}"
+  warn "check Actions is enabled (GITEA__actions__ENABLED) and re-run: $SCRIPT_DIR/register-gitea-runner.sh"
   exit 0
 fi
 log "    token acquired (${#TOKEN} chars) — storing in Secret/$RUNNER_SECRET"
