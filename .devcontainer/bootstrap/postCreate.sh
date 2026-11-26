@@ -40,6 +40,17 @@ bash "$SCRIPT_DIR/verify-dtctl.sh" || {
   echo "WARN:   FORCE=1 bash .devcontainer/bootstrap/install-tools.sh" >&2
 }
 
+# Write/refresh the dtctl `training` context through the canonical helper
+# (ISI-7872). verify-dtctl.sh above already persists the context via the same
+# shared function, but calling configure-dtctl-context.sh here explicitly makes
+# create-time and start-time use the identical code path (postStart.sh runs the
+# same script on every start, so a restart heals a stale codespace). Writes an
+# env-only context when no DT_PLATFORM_TOKEN exists, so the dtctl skill never
+# hits "config file not found". Idempotent + non-fatal (self-skips when
+# DT_TENANT/URL is absent).
+log "configuring the dtctl 'training' context"
+bash "$SCRIPT_DIR/configure-dtctl-context.sh" || log "WARN: configure-dtctl-context.sh reported an issue (non-fatal)."
+
 # Mint the workshop LLM proxy credential and point opencode at it BEFORE the
 # stack comes up, so the advanced instrumentation lab has its AI agent ready.
 # dispense-llm.sh is non-fatal and self-skips when the WORKSHOP_* secrets are

@@ -121,7 +121,7 @@ recorded to `~/.otel-training-dtctl-skill.txt`.
 
 **Auth — no new secret.** The skill operates Dynatrace through the dtctl CLI,
 which authenticates with the **existing platform token (`dt0s16`)** already
-provisioned via `DT_PLATFORM_TOKEN` / `DT_ENVIRONMENT`. Installing the skill
+provisioned via `DT_PLATFORM_TOKEN` / `DT_TENANT`. Installing the skill
 needs no credentials (it only copies embedded files). Confirm any time with:
 
 ```bash
@@ -148,15 +148,16 @@ dtctl skills status --plain
 ├── Dockerfile               # ubuntu-24.04 base + baked toolchain
 └── bootstrap/
     ├── install-tools.sh        # idempotent, version-pinnable, arch-aware tool install (incl. dtctl + opencode)
-    ├── verify-dtctl.sh         # gate: prove dtctl installed + runnable (ISI-7175)
+    ├── verify-dtctl.sh         # gate: prove dtctl installed + runnable + (if token) authenticated (ISI-7175)
+    ├── configure-dtctl-context.sh # idempotent self-heal of the dtctl `training` context on every start (ISI-7872)
     ├── dispense-llm.sh         # mint workshop LLM proxy key + wire opencode (ISI-7138)
     ├── install-dtctl-skill.sh  # install the dtctl Agent Skill into opencode (ISI-7176)
     ├── load-env.sh            # single `.env` flow: source repo-root .env into bootstrap + shells (ISI-7629)
     ├── preflight.sh           # local host checks: inotify/cpu/mem floors + stray-cluster (ISI-7629)
     ├── kind-config.yaml        # single-node kind cluster w/ 80/443 + NodePorts
     ├── create-cluster.sh       # idempotent + deterministic cluster create / re-attach
-    ├── postCreate.sh           # once: load .env, verify tools, wire opencode + skill, create cluster, record timing
-    └── postStart.sh            # every start: load .env, heal/re-attach cluster
+    ├── postCreate.sh           # once: load .env, verify tools, configure dtctl context, wire opencode + skill, create cluster, record timing
+    └── postStart.sh            # every start: load .env, heal/re-attach cluster, heal dtctl context
 ```
 
 > The single canonical env sample is the **repo-root** [`.env.sample`](../.env.sample);

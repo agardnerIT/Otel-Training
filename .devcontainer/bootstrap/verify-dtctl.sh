@@ -35,18 +35,13 @@ ok()   { printf '  \033[1;32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[1;33m!\033[0m %s\n' "$*" >&2; }
 bad()  { printf '  \033[1;31m✗\033[0m %s\n' "$*" >&2; }
 
-# derive_platform_url — the canonical DT_PLATFORM_URL-from-DT_TENANT rule
-# (docs-site/setup.md: "derived from DT_TENANT when unset"). On Gen3 SaaS the
-# tenant base is <id>.live.dynatrace.com (operator + OTLP) while dtctl talks to
-# the apps host <id>.apps.dynatrace.com. The only transform is live -> apps,
-# so this also handles the *.dynatracelabs.com dev hosts. Echoes the derived
-# URL, or nothing if DT_TENANT can't be mapped.
-derive_platform_url() {
-  local tenant="${1%/}"
-  if [[ "$tenant" == *.live.* ]]; then
-    printf '%s\n' "${tenant/.live./.apps.}"
-  fi
-}
+# Reuse the shared context helpers (ISI-7872): derive_platform_url + the single
+# source of truth for writing the 'training' context (configure_dtctl_context).
+# Sourcing (not running) it just defines the functions — the exec-guard inside
+# only fires when the file is run directly from postCreate/postStart.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/configure-dtctl-context.sh"
 
 bold "== dtctl verify (pinned ${DTCTL_VERSION}) =="
 
@@ -112,26 +107,20 @@ fi
 # --- No platform token: configure the environment, defer credentials. ---
 if [[ -z "$DT_PLATFORM_TOKEN" ]]; then
   warn "DT_PLATFORM_TOKEN not set — skipping live auth (dtctl labs are optional)"
+  # Persist an environment-only 'training' context through the SHARED helper
+  # (ISI-7872) — the exact same code postStart.sh runs on every start — so the
+  # set-context logic lives in exactly one place. dtctl then knows the tenant and
+  # never hits the bare "no context" / "config file not found" wall mid-lab. The
+  # helper self-skips cleanly (with guidance) when no URL can be resolved, never
+  # invents a token, and is idempotent + non-fatal.
+  configure_dtctl_context
   if [[ "$url" == https://* ]]; then
-    # Persist an environment-only context so dtctl knows the tenant — no bare
-    # "no context" error mid-lab. We deliberately do NOT invent a token or reuse
-    # the operator/ingest tokens: those carry different scopes and would fail
-    # dtctl auth. Idempotent (set-context updates in place) and non-fatal.
-    if dtctl config set-context training --environment "$url" \
-         --safety-level readwrite-all >/dev/null 2>&1 \
-       && dtctl config use-context training >/dev/null 2>&1; then
-      ok "configured dtctl context 'training' -> ${url} (credentials pending)"
-      bold "Attach dtctl credentials once you have a DT_PLATFORM_TOKEN (dt0s16 — see docs-site/setup.md):"
-      printf '  dtctl config set-credentials training-token --token "$DT_PLATFORM_TOKEN" \\\n'
-      printf '    && dtctl config set-context training --environment %s --token-ref training-token --safety-level readwrite-all \\\n' "$url"
-      printf '    && dtctl config use-context training\n'
-      bold "RESULT: dtctl OK (environment context set; credentials pending)"
-    else
-      warn "could not write the default dtctl config; run: dtctl config set-context --help"
-      bold "RESULT: dtctl OK (binary only; could not persist context)"
-    fi
+    bold "Attach dtctl credentials once you have a DT_PLATFORM_TOKEN (dt0s16 — see docs-site/setup.md):"
+    printf '  dtctl config set-credentials training-token --token "$DT_PLATFORM_TOKEN" \\\n'
+    printf '    && dtctl config set-context training --environment %s --token-ref training-token --safety-level readwrite-all \\\n' "$url"
+    printf '    && dtctl config use-context training\n'
+    bold "RESULT: dtctl OK (environment context set; credentials pending)"
   else
-    warn "no DT_PLATFORM_URL/DT_TENANT to point dtctl at — leaving it unconfigured"
     bold "RESULT: dtctl OK (binary only; no environment resolved)"
   fi
   exit 0
@@ -174,16 +163,11 @@ if doctor_out="$(dctl doctor --context verify 2>&1)"; then
   ok "dtctl authenticated against the tenant"
 
   # Persist a REAL context so plain `dtctl doctor` / `dtctl query` work with no
-  # manual steps (the ephemeral config above is deleted on exit). Idempotent:
-  # set-credentials/set-context update in place. Never fails the verify.
-  if dtctl config set-credentials training-token --token "$DT_PLATFORM_TOKEN" >/dev/null 2>&1 \
-    && dtctl config set-context training --environment "$url" --token-ref training-token \
-         --safety-level readwrite-all >/dev/null 2>&1 \
-    && dtctl config use-context training >/dev/null 2>&1; then
-    ok "configured dtctl context 'training' (~/.config/dtctl/config)"
-  else
-    warn "could not write the default dtctl config; run: dtctl config set-context --help"
-  fi
+  # manual steps (the ephemeral config above is deleted on exit). Delegated to
+  # the shared configure_dtctl_context (ISI-7872) — the same code postStart.sh
+  # runs on every start — so set-context is defined in exactly one place.
+  # DT_PLATFORM_TOKEN is set in this branch, so it attaches credentials too.
+  configure_dtctl_context
   bold "RESULT: dtctl OK (authenticated)"
   exit 0
 else
