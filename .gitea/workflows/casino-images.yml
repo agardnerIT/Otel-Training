@@ -106,14 +106,24 @@ jobs:
           echo "value=$TAG" >> "$GITHUB_OUTPUT"
           echo "Building vegasapp-${{ matrix.service }} as $REGISTRY/$OWNER/vegasapp-${{ matrix.service }}:$TAG"
 
-      # Gitea injects a per-job token scoped to the triggering actor's rights.
-      # The actor (seeded admin 'attendee', owner of the casino org) can write the
-      # org's container packages. Login against the same Gitea instance the alias
-      # points at. D3: packages are public-read, so PULLs need no secret — only
-      # this push path authenticates.
+      # Gitea 1.22's per-job secrets.GITEA_TOKEN is a short-lived Actions JOB
+      # token and CANNOT publish to the package registry: the /v2/token
+      # exchange rejects it and `docker login` fails with
+      # `Get "http://gitea.local:30001/v2/": unauthorized`
+      # (docs.gitea.com/usage/actions/comparison: "GITEA_TOKEN cannot publish to
+      # the package registry ... use a personal access token instead").
+      # seed-gitea.sh therefore mints a personal access token for the seeded
+      # admin ('attendee', owner of the casino org — the workflow actor) with
+      # read:package + write:package scopes and stores it as the repo Actions
+      # secret REGISTRY_TOKEN. Login against the same Gitea instance the alias
+      # points at; the PAT must belong to the actor, which holds for the seeded
+      # flow. D3: packages are public-read, so PULLs need no secret — only this
+      # push path authenticates. (secrets.GITEA_TOKEN remains fine for the git
+      # write-back in the redeploy job — job tokens can write repository code,
+      # just not packages.)
       - name: Log in to the Gitea container registry
         run: |
-          echo "${{ secrets.GITEA_TOKEN }}" \
+          echo "${{ secrets.REGISTRY_TOKEN }}" \
             | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
 
       # Build once, tag three ways, push all three (ISI-7882 / redeploy semantics):

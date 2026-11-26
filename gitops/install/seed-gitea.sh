@@ -139,6 +139,33 @@ else
   warn "could not PATCH has_actions=true on '$CASINO_ORG/$CASINO_REPO' — if the Actions tab stays empty, enable Actions in the repo Settings (non-fatal; the workflows are still seeded)"
 fi
 
+# 3c) Registry push token for the in-cluster CI (ISI-7909). Gitea 1.22's
+# Actions job token (secrets.GITEA_TOKEN) is NOT a personal access token and
+# cannot authenticate to the container registry /v2/token endpoint — the
+# exchange answers 401, so `docker login` in .gitea/workflows/casino-images.yml
+# fails with `Get "http://gitea.local:30001/v2/": unauthorized`. Mint a scoped
+# PAT for the admin user (rotate on re-run: Gitea only returns the secret at
+# creation time, same pattern as gitops/opencode/gitea-token.sh) and store it
+# as the repo Actions secret REGISTRY_TOKEN, which the workflow logs in with.
+# Non-fatal on failure (ISI-7555): this only gates the CI push path, not the
+# seed itself.
+log "minting package-scoped PAT and storing it as repo secret REGISTRY_TOKEN on $CASINO_ORG/$CASINO_REPO"
+REGISTRY_TOKEN_NAME="casino-ci-registry"
+REGISTRY_TOKEN_SCOPES="read:package,write:package,write:repository,read:user"
+api -X DELETE "$GITEA_URL/api/v1/users/$GITEA_ADMIN_USER/tokens/$REGISTRY_TOKEN_NAME" >/dev/null 2>&1 || true
+SCOPES_JSON="$(printf '%s' "$REGISTRY_TOKEN_SCOPES" | awk -F, '{for(i=1;i<=NF;i++){printf "%s\"%s\"",(i>1?",":""),$i}}')"
+TOKEN_RESP="$(api -X POST "$GITEA_URL/api/v1/users/$GITEA_ADMIN_USER/tokens" \
+  -d "{\"name\":\"$REGISTRY_TOKEN_NAME\",\"scopes\":[$SCOPES_JSON]}" 2>/dev/null || true)"
+REGISTRY_PAT="$(printf '%s' "$TOKEN_RESP" | sed -n 's/.*"sha1":"\([^"]*\)".*/\1/p')"
+if [[ -n "$REGISTRY_PAT" ]] \
+   && api -X PUT "$GITEA_URL/api/v1/repos/$CASINO_ORG/$CASINO_REPO/actions/secrets/REGISTRY_TOKEN" \
+        -d "{\"data\":\"$REGISTRY_PAT\"}" >/dev/null 2>&1; then
+  log "repo secret REGISTRY_TOKEN set on $CASINO_ORG/$CASINO_REPO (PAT '$REGISTRY_TOKEN_NAME', scopes: $REGISTRY_TOKEN_SCOPES)"
+else
+  warn "could not mint/store the REGISTRY_TOKEN PAT (token API response: ${TOKEN_RESP:-<empty>})."
+  warn "CI registry login will keep failing with 401 until this succeeds — re-run seed-gitea.sh once Gitea admin auth works."
+fi
+
 # 4) Push the canonical manifests.
 if [[ ! -d "$CASINO_MANIFESTS_DIR" ]]; then
   echo "ERROR: CASINO_MANIFESTS_DIR not found: $CASINO_MANIFESTS_DIR" >&2
