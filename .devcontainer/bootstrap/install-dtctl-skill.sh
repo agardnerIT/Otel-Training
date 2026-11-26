@@ -41,7 +41,7 @@
 # --- Auth --------------------------------------------------------------------
 # The skill operates Dynatrace through the dtctl CLI, which authenticates with
 # the EXISTING DT platform token (dt0s16) already provisioned in the codespace
-# env (DT_PLATFORM_TOKEN / DT_ENVIRONMENT — see .devcontainer/.env.example and
+# env (DT_PLATFORM_TOKEN / DT_TENANT — see .devcontainer/.env.example and
 # ISI-7165). No new secret is introduced here. Installing the skill itself needs
 # no credentials — it only copies embedded files onto disk.
 #
@@ -210,7 +210,7 @@ cat <<EOF
    via:    dtctl ${DTCTL_VER}  (skill embedded in the CLI)
  Each agent auto-loads this skill (name: '${SKILL_NAME}'). It drives
  Dynatrace via the dtctl CLI, authenticated by the EXISTING platform
- token (dt0s16) in DT_PLATFORM_TOKEN / DT_ENVIRONMENT — no new secret.
+ token (dt0s16) in DT_PLATFORM_TOKEN / DT_TENANT — no new secret.
  Confirm any time with:  dtctl skills install --list
 ================================================================
 EOF

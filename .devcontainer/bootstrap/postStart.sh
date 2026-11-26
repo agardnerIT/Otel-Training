@@ -23,6 +23,15 @@ bash "$SCRIPT_DIR/create-cluster.sh" || {
   exit 0   # non-fatal: don't block the codespace from opening
 }
 
+# Self-heal the dtctl `training` context on EVERY start (ISI-7872). The context
+# used to be written only at create time, so a codespace created before DT_TENANT
+# was set — or before the autoconfig landed — kept zero dtctl config and the
+# dtctl skill's first call hit "config file not found". Re-running this here means
+# a plain RESTART fixes a stale codespace with no rebuild. Idempotent + non-fatal
+# (self-skips when DT_TENANT/URL is absent).
+log "healing the dtctl 'training' context"
+bash "$SCRIPT_DIR/configure-dtctl-context.sh" || log "WARN: configure-dtctl-context.sh reported an issue (non-fatal)."
+
 # opencode⇄Gitea credentials (ISI-7711). gitea-token.sh writes
 # ~/.workshop-gitea.env (GITEA_TOKEN/URL/USER). Source it here so any Gitea step
 # in this script has the creds, and install a one-time managed snippet so every
