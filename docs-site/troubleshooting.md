@@ -36,6 +36,23 @@ your case is not here.
 | Errors missing under tail sampling (M9) | `decision_wait` shorter than trace duration | Raise `decision_wait` to ~15s |
 | Collector OOM / memory warnings (M9) | `num_traces` too high for the node | Lower `num_traces` or `decision_wait`; keep `memory_limiter` first |
 
+### dtctl `no context`
+
+A dtctl lab (catalog **C1–C4** / **D1**) errors with **`no context`** /
+`no current context is set` — `dtctl` was never pointed at your tenant. The
+bootstrap writes a `training` context for you, so this usually means the codespace
+was created before `DT_TENANT` was set. Re-run the idempotent bootstrap step:
+
+```bash
+bash .devcontainer/bootstrap/verify-dtctl.sh   # (re)writes ~/.config/dtctl/config
+dtctl config get-contexts                       # 'training' should be current
+```
+
+If you'd rather set it by hand (or need to attach credentials for the read/apply
+labs), follow the exact commands in
+[M0 → Configure dtctl](setup.md#configure-dtctl). Don't reuse the operator or
+ingest tokens — only a `DT_PLATFORM_TOKEN` (`dt0s16`) carries the dtctl scopes.
+
 ## Workshop LLM proxy (opencode)
 
 M0–M5 are opencode-first: every module drives the `opencode` CLI against a

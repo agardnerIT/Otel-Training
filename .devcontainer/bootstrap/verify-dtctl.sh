@@ -89,26 +89,55 @@ else
   warn "reported version does not contain the pin '${want}' — override or drift (non-fatal)"
 fi
 
-# 4. LIVE authentication check (only when a platform token is provided).
-# DT_PLATFORM_TOKEN is OPTIONAL (dtctl labs only), so no token = clean skip.
+# 4. Point dtctl at the environment — and, when a token is present, prove auth.
+# DT_PLATFORM_TOKEN is OPTIONAL (dtctl labs only), so its absence is never a
+# failure. But it must NOT leave dtctl context-less (the "no context" wall from
+# ISI-7847): whenever we can resolve the tenant URL we still persist a real
+# 'training' context so `dtctl get dashboards` knows WHERE it is. Two outcomes:
+#   * token present -> persist an AUTHENTICATED context (+ a live auth check)
+#   * token absent  -> persist an ENVIRONMENT-ONLY context and print the ONE
+#     copy-paste line that attaches credentials later (ISI-7848).
 DT_PLATFORM_TOKEN="${DT_PLATFORM_TOKEN:-}"
 DT_PLATFORM_URL="${DT_PLATFORM_URL:-}"
 DT_TENANT="${DT_TENANT:-}"
 
-if [[ -z "$DT_PLATFORM_TOKEN" ]]; then
-  warn "DT_PLATFORM_TOKEN not set — skipping live auth (dtctl labs are optional)"
-  bold "RESULT: dtctl OK (binary only; auth skipped)"
-  exit 0
-fi
-
-# Resolve the apps URL: explicit DT_PLATFORM_URL wins; else derive from DT_TENANT.
+# Resolve the apps URL once — both paths use it. Explicit DT_PLATFORM_URL wins;
+# else derive from DT_TENANT (live -> apps).
 url="$DT_PLATFORM_URL"
 if [[ -z "$url" ]]; then
   url="$(derive_platform_url "$DT_TENANT")"
-  if [[ -n "$url" ]]; then
-    ok "derived DT_PLATFORM_URL from DT_TENANT: ${url}"
-  fi
+  [[ -n "$url" ]] && ok "derived DT_PLATFORM_URL from DT_TENANT: ${url}"
 fi
+
+# --- No platform token: configure the environment, defer credentials. ---
+if [[ -z "$DT_PLATFORM_TOKEN" ]]; then
+  warn "DT_PLATFORM_TOKEN not set — skipping live auth (dtctl labs are optional)"
+  if [[ "$url" == https://* ]]; then
+    # Persist an environment-only context so dtctl knows the tenant — no bare
+    # "no context" error mid-lab. We deliberately do NOT invent a token or reuse
+    # the operator/ingest tokens: those carry different scopes and would fail
+    # dtctl auth. Idempotent (set-context updates in place) and non-fatal.
+    if dtctl config set-context training --environment "$url" \
+         --safety-level readwrite-all >/dev/null 2>&1 \
+       && dtctl config use-context training >/dev/null 2>&1; then
+      ok "configured dtctl context 'training' -> ${url} (credentials pending)"
+      bold "Attach dtctl credentials once you have a DT_PLATFORM_TOKEN (dt0s16 — see docs-site/setup.md):"
+      printf '  dtctl config set-credentials training-token --token "$DT_PLATFORM_TOKEN" \\\n'
+      printf '    && dtctl config set-context training --environment %s --token-ref training-token --safety-level readwrite-all \\\n' "$url"
+      printf '    && dtctl config use-context training\n'
+      bold "RESULT: dtctl OK (environment context set; credentials pending)"
+    else
+      warn "could not write the default dtctl config; run: dtctl config set-context --help"
+      bold "RESULT: dtctl OK (binary only; could not persist context)"
+    fi
+  else
+    warn "no DT_PLATFORM_URL/DT_TENANT to point dtctl at — leaving it unconfigured"
+    bold "RESULT: dtctl OK (binary only; no environment resolved)"
+  fi
+  exit 0
+fi
+
+# --- Platform token present: require a usable URL, then live-auth. ---
 if [[ "$url" != https://* ]]; then
   bad "DT_PLATFORM_TOKEN is set but no usable platform URL"
   cat >&2 <<EOF
