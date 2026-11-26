@@ -5,7 +5,7 @@
 # missing or when FORCE=1. Versions are read from env vars so the same script is
 # used at image build time (Dockerfile) and for runtime self-heal (postStart).
 #
-# Tools: kubectl, helm, kind, argocd, yq, dtctl, opencode, otelcol-contrib
+# Tools: kubectl, helm, kind, argocd, yq, dtctl, opencode, otelcol-contrib, crane
 #        (jq/git come from apt)
 set -euo pipefail
 
@@ -20,6 +20,11 @@ DTCTL_VERSION="${DTCTL_VERSION:-v0.45.0}"   # Dynatrace/dtctl GoReleaser tag; "l
 DTCTL_REPO="${DTCTL_REPO:-Dynatrace/dtctl}"  # was dynatrace-oss/dtctl — repo moved to the Dynatrace org
 OPENCODE_VERSION="${OPENCODE_VERSION:-v1.19.5}"  # sst/opencode release tag; "latest" resolves via API
 OPENCODE_REPO="${OPENCODE_REPO:-sst/opencode}"
+# crane — google/go-containerregistry CLI. Used by gitops/install/verify-registry-mirror.sh
+# (ISI-7638 spike) and gitops/install/mirror-baseline-images.sh (ISI-7881) to copy
+# the baseline casino images GHCR->Gitea at bootstrap WITHOUT a docker build.
+CRANE_VERSION="${CRANE_VERSION:-v0.20.2}"   # google/go-containerregistry release tag
+CRANE_REPO="${CRANE_REPO:-google/go-containerregistry}"
 # otelcol-contrib — the Collector binary observability/validate.sh uses to
 # `otelcol validate` the collector configs offline. KEEP IN LOCKSTEP with
 # observability/versions.env (OTEL_COLLECTOR_VERSION). Baking it into the image
@@ -211,6 +216,62 @@ install_opencode() {
   log "opencode installed: $(opencode --version 2>/dev/null || echo 'installed (version check deferred)')"
 }
 
+# crane — google/go-containerregistry registry CLI. Copies OCI images between
+# registries WITHOUT a docker daemon or a build (crane copy = pull manifest +
+# blobs, re-push), so the bootstrap can mirror the baseline casino images
+# GHCR->Gitea on the 8 GB codespace without reintroducing the in-cluster builds
+# D1 removed (ISI-7881). Released as per-OS/arch tarballs
+# go-containerregistry_<OS>_<arch>.tar.gz (OS capitalised: Linux/Darwin; arch
+# x86_64/arm64), each containing crane/gcrane/krane. Arch-aware via the same
+# $OS/$ARCH the other installers use; download failures are non-fatal — the
+# mirror step itself is non-fatal + loud when crane is absent.
+install_crane() {
+  if have crane && [[ "$FORCE" != "1" ]]; then log "crane present: $(crane version 2>/dev/null || echo unknown)"; return; fi
+  # go-containerregistry asset names: OS Linux/Darwin, arch amd64->x86_64, arm64->arm64.
+  local cr_os cr_arch
+  case "$OS" in
+    linux)  cr_os="Linux" ;;
+    darwin) cr_os="Darwin" ;;
+    *) echo "WARN: no crane build mapping for OS '$OS' — skipping" >&2; return ;;
+  esac
+  case "$ARCH" in
+    amd64) cr_arch="x86_64" ;;
+    arm64) cr_arch="arm64" ;;
+    *) echo "WARN: no crane build for arch '$ARCH' — skipping" >&2; return ;;
+  esac
+  local url="${CRANE_DOWNLOAD_URL:-}"
+  if [[ -z "$url" ]]; then
+    local tag="$CRANE_VERSION"
+    # "latest" embeds the version in the asset path, so resolve the real tag first.
+    if [[ "$tag" == "latest" ]]; then
+      tag="$(curl -fsSL "https://api.github.com/repos/${CRANE_REPO}/releases/latest" \
+             | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+      [[ -z "$tag" ]] && { echo "WARN: could not resolve latest crane tag from GitHub API" >&2; return; }
+    fi
+    url="https://github.com/${CRANE_REPO}/releases/download/${tag}/go-containerregistry_${cr_os}_${cr_arch}.tar.gz"
+  fi
+  log "installing crane from ${url}"
+  if ! fetch "$url" /tmp/crane.tgz; then
+    echo "WARN: could not download crane from ${url}." >&2
+    echo "WARN: set CRANE_DOWNLOAD_URL (direct .tar.gz) or CRANE_VERSION and re-run:" >&2
+    echo "WARN:   FORCE=1 bash .devcontainer/bootstrap/install-tools.sh" >&2
+    rm -f /tmp/crane.tgz
+    return
+  fi
+  if ! tar tzf /tmp/crane.tgz >/dev/null 2>&1; then
+    echo "WARN: crane download is not a gzip tarball — skipping" >&2
+    rm -f /tmp/crane.tgz
+    return
+  fi
+  local tmpd; tmpd="$(mktemp -d)"
+  tar xzf /tmp/crane.tgz -C "$tmpd" crane 2>/dev/null || tar xzf /tmp/crane.tgz -C "$tmpd"
+  local bin; bin="$(find "$tmpd" -type f -name crane | head -n1)"
+  [[ -z "$bin" ]] && { echo "WARN: crane binary not found inside archive" >&2; rm -rf "$tmpd" /tmp/crane.tgz; return; }
+  install_bin crane "$bin"
+  rm -rf "$tmpd" /tmp/crane.tgz
+  log "crane installed: $(crane version 2>/dev/null || echo 'installed (version check deferred)')"
+}
+
 # otelcol-contrib — the OpenTelemetry Collector (contrib distro) used by
 # observability/validate.sh to validate the collector configs offline. Released
 # by GoReleaser as per-OS/arch tarballs
@@ -252,6 +313,7 @@ main() {
   install_yq
   install_dtctl
   install_opencode
+  install_crane
   install_otelcol
   log "toolchain install complete"
 }

@@ -224,13 +224,25 @@ IMAGE_SOURCE=gitea bash deploy/casino/render-images.sh -o /tmp/casino-rendered
 ```
 
 `IMAGE_SOURCE` flows through the environment, so the same flip works on the
-seed/deploy path (`gitops/install/seed-gitea.sh`, `deploy-environment.sh`) by
-exporting `IMAGE_SOURCE=gitea` — no code change at the call sites. The alias and
-namespace are overridable via `GITEA_REGISTRY` (default `gitea.local:30001`, the
-WS-D contract) and `GITEA_OWNER` (default `casino`, the `CASINO_ORG` seeded repo
-owner). Infra images (postgres, redis, curl) and the upstream `grafana/k6`
-loadgen are not casino-built and are left on their public upstreams in **both**
-modes.
+seed/deploy path (`gitops/install/seed-gitea.sh`, `deploy-environment.sh`). The
+alias and namespace are overridable via `GITEA_REGISTRY` (default
+`gitea.local:30001`, the WS-D contract) and `GITEA_OWNER` (default `casino`, the
+`CASINO_ORG` seeded repo owner). Infra images (postgres, redis, curl) and the
+upstream `grafana/k6` loadgen are not casino-built and are left on their public
+upstreams in **both** modes.
+
+> **Seed/bootstrap default is now `gitea` (ISI-7881 / ISI-7867).** While the
+> renderer CLI still defaults to GHCR (so a bare `render-images.sh` is unchanged),
+> `gitops/install/seed-gitea.sh` now defaults **`IMAGE_SOURCE=gitea`**, so a fresh
+> bring-up seeds `casino/casino` `k8s/*.yaml` with `gitea.local:30001/casino/vegasapp-*`
+> refs and Argo CD's source of truth is the in-cluster Gitea registry — no `ghcr.io`
+> in the deployed manifests. Set `IMAGE_SOURCE=ghcr` on the seed to opt back into
+> the upstream/fork GHCR loop (the fork exercise above). Because the `[skip ci]`
+> seed builds nothing, the bootstrap first **mirrors** the baseline images
+> GHCR→Gitea with `gitops/install/mirror-baseline-images.sh` (crane copy, no build)
+> so the registry is populated on first sync. Node-level pulls of the alias are
+> resolved by the containerd mirror wired in `create-cluster.sh` (ISI-7638); see
+> `gitops/install/registry-mirror.md`.
 
 **No `imagePullSecret` for Gitea (D3).** Gitea container packages are made
 public (anonymous pull), so `gitea.local:30001` refs pull without a secret. The
