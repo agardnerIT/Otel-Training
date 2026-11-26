@@ -5,12 +5,24 @@
 # images and pushes them to  gitea.local:30001/<owner>/<image>:<tag>  — the exact
 # string node containerd pulls back, so push and pull are byte-identical.
 #
-# Shape: one Deployment, two containers in the same pod —
+# Shape: one Deployment, three containers in the same pod (shared netns) —
 #   * runner : gitea/act_runner, registers against Gitea and executes workflows.
 #   * dind   : docker:dind, the build daemon act_runner talks to over TCP. It is
 #              the thing that actually `docker build`s and `docker push`es, so it
 #              is the container that must (a) trust the Gitea registry as insecure
 #              and (b) resolve the gitea.local alias.
+#   * fwd    : registry-realm forwarder (ISI-7909). Gitea 1.22 builds the OCI
+#              auth challenge from ROOT_URL, NOT from the request host
+#              (go-gitea/gitea#29591): a ping to gitea.local:30001/v2/ is answered
+#              with realm="http://localhost:30001/v2/token". On the codespace
+#              host and on the kind node, localhost:30001 reaches the Gitea
+#              NodePort, but inside this pod localhost is pod-local, so the
+#              docker client/daemon dialing the realm got [::1]:30001 connection
+#              refused and `docker login`/`push` failed. This sidecar forwards
+#              pod-loopback :30001 to the node NodePort (the same target the
+#              gitea.local hostAlias resolves to), so the advertised realm is
+#              reachable from the pod netns too. Only loopback :30001 is
+#              forwarded — localhost:2375 (dind) stays pod-local.
 #
 # Registration token: NOT baked in. register-gitea-runner.sh generates a global
 # runner-registration token from the Gitea pod, writes it into the Secret below,
@@ -150,6 +162,39 @@ spec:
               memory: 256Mi
             limits:
               memory: 1Gi
+        # Loopback forwarder for the registry token realm (ISI-7909) — see the
+        # header comment. NODE_IP comes from the downward API, so no external
+        # patch is needed when the pod lands on a different node. The IPv4
+        # wildcard bind covers 127.0.0.1 (and the pod IP for the readiness
+        # probe); the second listener covers the IPv6 loopback [::1] that
+        # `localhost` resolves to first in this pod.
+        - name: registry-realm-forwarder
+          image: alpine/socat:1.8.0.3
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "registry-realm-forwarder: loopback :30001 -> ${NODE_IP}:30001 (Gitea NodePort)"
+              socat TCP4-LISTEN:30001,bind=0.0.0.0,fork,reuseaddr TCP:"${NODE_IP}:30001" &
+              socat TCP6-LISTEN:30001,bind=::1,fork,reuseaddr TCP:"${NODE_IP}:30001" &
+              wait
+          readinessProbe:
+            tcpSocket:
+              port: 30001
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
       volumes:
         - name: runner-data
           emptyDir: {}
