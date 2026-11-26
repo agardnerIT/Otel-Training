@@ -28,7 +28,15 @@ pass() { echo "[PASS] $*"; PASS=$((PASS+1)); }
 fail() { echo "[FAIL] $*"; FAIL=$((FAIL+1)); }
 info() { echo "       $*"; }
 
-json_str() { python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$1"; }
+# Minimal pure-bash JSON string encoder (no python3 in the Codespace): wrap in
+# quotes, escape backslash/quote, fold newlines/tabs, drop CRs. Enough for the
+# short title/branch/body strings we send.
+json_str() {
+  local s="$1"
+  s="${s//\\/\\\\}"; s="${s//\"/\\\"}"
+  s="${s//$'\r'/}"; s="${s//$'\n'/\\n}"; s="${s//$'\t'/\\t}"
+  printf '"%s"' "$s"
+}
 
 echo "=== opencode⇄Gitea git-loop verification (ISI-7711) ==="
 if [[ -z "${GITEA_TOKEN:-}" ]]; then
