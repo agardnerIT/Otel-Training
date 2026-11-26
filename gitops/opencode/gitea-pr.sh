@@ -44,6 +44,20 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 
+# Guard: 'origin' must point at the in-cluster Gitea, not the GitHub upstream.
+# Running this from the training monorepo's apps/casino pushes the whole repo to
+# GitHub instead of opening a Gitea PR — fail fast before we branch/commit.
+GITEA_HOST="${GITEA_URL#*://}"; GITEA_HOST="${GITEA_HOST%%/*}"
+ORIGIN_URL="$(git remote get-url origin 2>/dev/null || echo "")"
+if [[ "$ORIGIN_URL" != *"$GITEA_HOST"* ]]; then
+  warn "'origin' is '${ORIGIN_URL:-<none>}', not the in-cluster Gitea ($GITEA_HOST)."
+  warn "You're probably in the training-repo clone (apps/casino). The opencode git"
+  warn "loop pushes to a standalone casino clone. Set it up and run from there:"
+  warn "    bash gitops/opencode/clone-casino.sh   # creates \$HOME/casino"
+  warn "    cd \$HOME/casino                        # re-run this script here"
+  exit 1
+fi
+
 # Derive a branch name from the title if one was not given.
 if [[ -z "$BRANCH" ]]; then
   slug="$(printf '%s' "$TITLE" | tr '[:upper:]' '[:lower:]' \
@@ -74,7 +88,15 @@ log "pushing '$BRANCH' to origin"
 git push -q -u origin "$BRANCH"
 
 # 4) Open the PR via Gitea's REST API.
-json_str() { python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$1"; }
+# Minimal pure-bash JSON string encoder (no python3 in the Codespace): wrap in
+# quotes, escape backslash/quote, fold newlines/tabs, drop CRs. Enough for the
+# short title/branch/body strings we send.
+json_str() {
+  local s="$1"
+  s="${s//\\/\\\\}"; s="${s//\"/\\\"}"
+  s="${s//$'\r'/}"; s="${s//$'\n'/\\n}"; s="${s//$'\t'/\\t}"
+  printf '"%s"' "$s"
+}
 PR_BODY="$(json_str "Opened from the Codespace CLI via opencode. Merge in the Gitea UI to roll out.")"
 PAYLOAD="$(printf '{"title":%s,"head":%s,"base":%s,"body":%s}' \
   "$(json_str "$TITLE")" "$(json_str "$BRANCH")" "$(json_str "$BASE_BRANCH")" "$PR_BODY")"
