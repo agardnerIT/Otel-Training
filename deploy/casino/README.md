@@ -174,9 +174,27 @@ The casino lab has **two** push-to-deploy loops. Know which one a change needs:
 **Argo CD syncs it** — no image rebuild. This is the loop the advanced catalog
 "ship via GitOps" steps use for collector/config edits.
 
-**Loop 2 — service code → your fork → Actions → image → re-seed/rollout.**
+**Loop 2 (default) — service code → in-cluster Gitea CI → image → write-back → Argo CD.**
 Editing a service's **source** under `apps/casino/<svc>/` needs a **new image**,
-so Argo CD cannot pick it up from a manifest change alone. The flow is:
+so Argo CD cannot pick it up from a manifest change alone. On the default Gitea
+GitOps path this is **fully in-cluster and automated** (ISI-7882) — nothing
+leaves the Codespace and you never hand-edit a tag:
+
+```text
+edit apps/casino/<svc>/…  ->  git push (in-cluster casino/casino repo)
+   -> Gitea Actions builds + SHA-tags  gitea.local:30001/casino/vegasapp-<svc>:<sha>
+   -> CI commits that :<sha> into k8s/ [skip ci]  ->  Argo CD syncs the new image
+```
+
+The CI `write-back k8s tag` job rewrites the `vegasapp-*` refs in `k8s/*.yaml` to
+the per-commit `:<sha>` and commits it back, so the manifest Argo watches always
+points at the freshly built image. Walk-through:
+[Local CI/CD: Gitea Actions & Packages](../../docs-site/advanced/gitea-local-cicd.md).
+
+**Loop 2 (optional variant) — service code → your GHCR fork → `deploy-my-build.sh`.**
+A separate exercise that builds on **your own GitHub fork's** Actions and GHCR
+namespace instead of the in-cluster registry. Opt in with `IMAGE_SOURCE=ghcr` on
+the seed. The flow is:
 
 ```text
 edit apps/casino/<svc>/…  ->  git push (your fork)  ->  fork Actions build+publish

@@ -245,6 +245,42 @@ if [[ -d "$EXPECTED_SRC" ]]; then
   else
     pass "seeded manifests carry concrete image refs (no \${IMAGE_OWNER}/\${IMAGE_TAG} placeholders)"
   fi
+  # --- GHCR-regression gate (ISI-7883 / ISI-7867c) ---------------------------
+  # Children 1+2 make the in-cluster Gitea registry Argo CD's source of truth:
+  # seed-gitea.sh now defaults IMAGE_SOURCE=gitea, so the seeded k8s/ must
+  # reference ${GITEA_REGISTRY}/casino/vegasapp-* and carry NO ghcr.io refs for
+  # the 7 casino-built services. This gate FAILS if the seeded manifests regress
+  # to the upstream GHCR images (e.g. Argo CD pinned back to
+  # ghcr.io/henrikrexed/otel-training/vegasapp-*) — the exact drift ISI-7867 fixed.
+  # Only the 7 vegasapp-* refs are asserted: infra images (postgres/redis/curl)
+  # and the upstream grafana/k6 loadgen are not casino-built and stay on public
+  # upstreams in BOTH modes. The fork exercise (IMAGE_SOURCE=ghcr) legitimately
+  # seeds GHCR refs, so the gate inverts when that is explicitly set.
+  EXPECT_IMAGE_SOURCE="${IMAGE_SOURCE:-gitea}"
+  EXPECT_REGISTRY="${GITEA_REGISTRY:-gitea.local:30001}"
+  vegas_total=0; vegas_gitea=0; vegas_ghcr=0; vegas_other=0
+  while IFS= read -r ref; do
+    [[ -z "$ref" ]] && continue
+    vegas_total=$((vegas_total+1))
+    if   [[ "$ref" == *"$EXPECT_REGISTRY/"* ]]; then vegas_gitea=$((vegas_gitea+1))
+    elif [[ "$ref" == ghcr.io/* ]];             then vegas_ghcr=$((vegas_ghcr+1))
+    else                                             vegas_other=$((vegas_other+1)); fi
+  done < <(grep -rhE '^[[:space:]]*image:[[:space:]]' "$WORK/k8s"/*.yaml 2>/dev/null \
+           | grep -oE '[^"[:space:]]*vegasapp-[A-Za-z0-9./:_-]+')
+  if [[ "$EXPECT_IMAGE_SOURCE" == "ghcr" ]]; then
+    info "IMAGE_SOURCE=ghcr (fork exercise) — seeded vegasapp-* refs expected on GHCR; Gitea-registry gate inverted"
+    [[ "$vegas_ghcr" -gt 0 ]] \
+      && pass "fork mode: $vegas_ghcr seeded vegasapp-* ref(s) on ghcr.io (expected for IMAGE_SOURCE=ghcr)" \
+      || info "no ghcr.io vegasapp-* refs found under IMAGE_SOURCE=ghcr (seed may not have run in fork mode)"
+  elif [[ "$vegas_ghcr" -gt 0 ]]; then
+    fail "REGRESSION: $vegas_ghcr seeded vegasapp-* image ref(s) point at ghcr.io — the in-cluster Gitea loop expects ${EXPECT_REGISTRY}/casino/vegasapp-* (Argo pinned back to upstream GHCR)"
+    grep -rnE '^[[:space:]]*image:[[:space:]].*ghcr\.io/[^"[:space:]]*vegasapp-' "$WORK/k8s"/*.yaml 2>/dev/null \
+      | sed 's/^/       /' | tee -a "$EVIDENCE"
+  elif [[ "$vegas_gitea" -gt 0 ]]; then
+    pass "seeded vegasapp-* refs resolve to ${EXPECT_REGISTRY}/casino (in-cluster Gitea registry; no ghcr.io regression) — $vegas_gitea ref(s)"
+  else
+    fail "no vegasapp-* image refs under ${EXPECT_REGISTRY}/casino in seeded k8s/ (found $vegas_total total, $vegas_other on other hosts) — seed may not have rendered IMAGE_SOURCE=gitea"
+  fi
   # Per-attendee cluster name must be RESOLVED + consistent so an attendee can
   # filter their own data on a shared tenant with `k8s.cluster.name` ==
   # PARTICIPANT_ID (ISI-7654 / D1). Assert: no literal ${CLUSTER_NAME} survived,
@@ -362,6 +398,88 @@ else
   else
     fail "Gitea registry /v2/ not reachable (HTTP ${code:-000} at $NODE_URL) — is [packages] enabled?"
   fi
+fi
+
+# --- 6. Image loop closed — running casino pulls from Gitea, no GHCR (ISI-7883) ---
+# The runtime counterpart to the offline GHCR-regression gate in section 3. The
+# in-cluster GitOps loop (ISI-7867) means the LIVE casino Deployments must pull
+# their vegasapp-* images from the in-cluster Gitea registry, not ghcr.io. 6a is
+# always-on and cheap (reads the live Deployments). 6b is env-gated
+# (VERIFY_IMAGE_LOOP=1) and actually closes the loop: push a source change into
+# the in-cluster casino repo and confirm CI's write-back rolls a new image tag.
+hdr "6. Image loop closed — Gitea-registry images at runtime (ISI-7883)"
+EXPECT_REGISTRY="${GITEA_REGISTRY:-gitea.local:30001}"
+
+# 6a. Live Deployments pull vegasapp-* from the Gitea registry (no ghcr.io).
+live_total=0; live_gitea=0; live_ghcr=0
+while IFS= read -r ref; do
+  [[ "$ref" == *vegasapp-* ]] || continue
+  live_total=$((live_total+1))
+  if   [[ "$ref" == *"$EXPECT_REGISTRY/"* ]]; then live_gitea=$((live_gitea+1))
+  elif [[ "$ref" == ghcr.io/* ]];             then live_ghcr=$((live_ghcr+1)); fi
+done < <(kubectl -n "$CASINO_NS" get deploy \
+          -o jsonpath='{range .items[*]}{range .spec.template.spec.containers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null)
+if [[ "$live_total" -eq 0 ]]; then
+  info "no vegasapp-* Deployments on the cluster yet — skipping runtime image-source check"
+elif [[ "$live_ghcr" -gt 0 ]]; then
+  fail "REGRESSION: $live_ghcr running casino Deployment(s) pull vegasapp-* from ghcr.io — expected ${EXPECT_REGISTRY}/casino (in-cluster Gitea loop)"
+  kubectl -n "$CASINO_NS" get deploy \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"  "}{.spec.template.spec.containers[0].image}{"\n"}{end}' 2>/dev/null \
+    | grep 'ghcr.io.*vegasapp-' | sed 's/^/       /' | tee -a "$EVIDENCE"
+elif [[ "$live_gitea" -gt 0 ]]; then
+  pass "all $live_gitea running vegasapp-* Deployment(s) pull from ${EXPECT_REGISTRY}/casino (no ghcr.io at runtime)"
+else
+  info "running vegasapp-* images are on neither ghcr.io nor ${EXPECT_REGISTRY} ($live_total ref(s)) — custom registry?"
+fi
+
+# 6b. Loop-closed, end-to-end (env-gated: VERIFY_IMAGE_LOOP=1). Pushes a benign
+# marker file under apps/casino/slots/ into the in-cluster casino repo (a normal
+# commit, NOT [skip ci]), then waits for Gitea CI to build the per-commit :<sha>
+# and write it back into k8s/ so Argo CD rolls a new tag. Proof the loop is live:
+# the deployed slots tag changes. This triggers ONE real in-cluster build, so it
+# is opt-in, not part of the default run.
+if [[ "${VERIFY_IMAGE_LOOP:-0}" == "1" ]]; then
+  LOOP_TIMEOUT="${IMAGE_LOOP_TIMEOUT:-420}"
+  SLOTS_DEPLOY="${SLOTS_DEPLOY:-vegas-casino-slots}"
+  before=$(kubectl -n "$CASINO_NS" get deploy "$SLOTS_DEPLOY" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
+  before_tag="${before##*:}"
+  if [[ -z "$before" ]]; then
+    fail "loop check: slots Deployment '$SLOTS_DEPLOY' not found — cannot measure tag change"
+  else
+    info "loop check: slots currently at tag '$before_tag' ($before)"
+    LOOP_DIR="$(mktemp -d)"
+    CLONE_URL="http://${GITEA_USER}:${GITEA_PASS}@${GITEA_URL#http://}/${CASINO_ORG}/${CASINO_REPO}.git"
+    if git clone -q --depth 1 "$CLONE_URL" "$LOOP_DIR/casino" 2>/dev/null; then
+      MARKER="$LOOP_DIR/casino/apps/casino/slots/.ci-loop-marker"
+      mkdir -p "$(dirname "$MARKER")"
+      echo "verify.sh image-loop probe ${STAMP}" >> "$MARKER"
+      ( cd "$LOOP_DIR/casino" \
+        && git -c user.email=verify@local -c user.name=verify add apps/casino/slots/.ci-loop-marker \
+        && git -c user.email=verify@local -c user.name=verify commit -q -m "verify: image-loop probe ${STAMP}" \
+        && git push -q origin HEAD:main ) 2>/dev/null \
+        && info "loop check: pushed marker commit; waiting up to ${LOOP_TIMEOUT}s for CI build + write-back + Argo roll" \
+        || info "loop check: push failed (auth/branch protection?) — cannot run the live loop test"
+      waited=0; new_tag="$before_tag"
+      while [[ "$waited" -lt "$LOOP_TIMEOUT" ]]; do
+        sleep 15; waited=$((waited+15))
+        now=$(kubectl -n "$CASINO_NS" get deploy "$SLOTS_DEPLOY" \
+               -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null)
+        new_tag="${now##*:}"
+        [[ "$new_tag" != "$before_tag" ]] && break
+      done
+      if [[ "$new_tag" != "$before_tag" ]]; then
+        pass "loop closed: slots tag changed '$before_tag' -> '$new_tag' after a source push (CI built + wrote back k8s/; Argo rolled)"
+      else
+        fail "loop NOT closed: slots tag still '$before_tag' after ${LOOP_TIMEOUT}s — check Gitea Actions run + the 'write-back k8s tag' job"
+      fi
+    else
+      fail "loop check: could not clone ${CASINO_ORG}/${CASINO_REPO} from Gitea — skipping live loop test"
+    fi
+    rm -rf "$LOOP_DIR" 2>/dev/null
+  fi
+else
+  info "loop-closed live test skipped (set VERIFY_IMAGE_LOOP=1 to push a probe commit and assert the deployed tag changes)"
 fi
 
 # --- Summary ----------------------------------------------------------------
