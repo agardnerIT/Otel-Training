@@ -146,6 +146,26 @@ mkdir -p "$WORK/k8s"
 # a shared Dynatrace tenant can be filtered per participant. Resolved the same way
 # as create-cluster.sh / deploy-environment.sh; defaults to otel-training.
 CLUSTER_NAME="${CLUSTER_NAME:-${KIND_CLUSTER_NAME:-${PARTICIPANT_ID:-otel-training}}}"
+
+# Image SOURCE for the seeded manifests (ISI-7881 / ISI-7867 gap 1). The default
+# is now the in-cluster Gitea container registry (gitea.local:30001/casino/vegasapp-*)
+# instead of upstream GHCR, so Argo CD's source of truth is the registry the
+# in-cluster CI loop (ISI-7641) and the bootstrap mirror (ISI-7881) feed — the
+# full "edit code -> Gitea CI -> redeploy" loop the casino README promises, with
+# no ghcr.io dependency in the deployed manifests. render-images.sh performs the
+# plain-text sed rewrite (ISI-7640 / WS-C); gitea.local:30001 is resolved by the
+# node containerd mirror (ISI-7638, wired in create-cluster.sh).
+#
+# Still a knob: set IMAGE_SOURCE=ghcr to seed the GHCR refs instead (the fork
+# exercise). Interplay with the fork path: deploy/casino/deploy-my-build.sh +
+# image-owner.sh resolve a GHCR *fork* owner and are for the GHCR loop
+# (IMAGE_SOURCE=ghcr). Under the Gitea default the owner segment is irrelevant —
+# render-images.sh rewrites the host to GITEA_REGISTRY/GITEA_OWNER (casino) and
+# discards the GHCR owner — so an attendee redeploys their build by pushing
+# apps/casino/** to the seeded repo (Gitea CI rebuilds + repushes to the same
+# gitea.local:30001/casino/vegasapp-* refs), NOT by switching GHCR owners.
+IMAGE_SOURCE="${IMAGE_SOURCE:-gitea}"
+
 # Fork-aware image owner (ISI-7589 c3). Baseline-first: if this repo's origin is
 # the upstream repo, or a fork has not yet published its vegasapp-* images at the
 # pinned tag, IMAGE_OWNER resolves to the upstream owner so a brand-new fork comes
@@ -164,8 +184,8 @@ if [[ -f "$IMAGE_OWNER_HELPER" ]]; then
 fi
 RENDER="$REPO_ROOT/deploy/casino/render-images.sh"
 if [[ -f "$RENDER" ]]; then
-  log "rendering image owner/tag + cluster name (IMAGE_OWNER=${IMAGE_OWNER:-henrikrexed} IMAGE_TAG=${IMAGE_TAG:-$(tr -d '[:space:]' < "$REPO_ROOT/deploy/casino/IMAGE_VERSION" 2>/dev/null || echo latest)} CLUSTER_NAME=${CLUSTER_NAME})"
-  SRC_DIR="$CASINO_MANIFESTS_DIR" CLUSTER_NAME="$CLUSTER_NAME" bash "$RENDER" -o "$WORK/k8s"
+  log "rendering image source/owner/tag + cluster name (IMAGE_SOURCE=${IMAGE_SOURCE} IMAGE_OWNER=${IMAGE_OWNER:-henrikrexed} IMAGE_TAG=${IMAGE_TAG:-$(tr -d '[:space:]' < "$REPO_ROOT/deploy/casino/IMAGE_VERSION" 2>/dev/null || echo latest)} CLUSTER_NAME=${CLUSTER_NAME})"
+  SRC_DIR="$CASINO_MANIFESTS_DIR" CLUSTER_NAME="$CLUSTER_NAME" IMAGE_SOURCE="$IMAGE_SOURCE" bash "$RENDER" -o "$WORK/k8s"
 else
   warn "render-images.sh not found — copying manifests verbatim (image placeholders will NOT be resolved)"
   cp -r "$CASINO_MANIFESTS_DIR"/. "$WORK/k8s/"

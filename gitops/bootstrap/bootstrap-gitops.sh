@@ -79,6 +79,17 @@ case "$GITOPS_PROVIDER" in
     $KUBECTL apply -f "$GITOPS_DIR/install/gitea-act-runner.yaml" || true
     bash "$GITOPS_DIR/install/register-gitea-runner.sh" || true
 
+    # Cold-start image mirror (ISI-7881 / ISI-7867 gap 2). The seed now defaults
+    # IMAGE_SOURCE=gitea, so Argo syncs pods that pull gitea.local:30001/casino/
+    # vegasapp-*; but the `[skip ci]` seed builds nothing, so the Gitea registry
+    # is empty on first boot. COPY (not build) the baseline casino images
+    # GHCR->Gitea now, BEFORE Argo installs, so the first sync has images to pull
+    # and no pod ImagePullBackOffs. NON-FATAL + loud (the script exits 0 and
+    # prints a summary); a no-op when IMAGE_SOURCE=ghcr or crane is absent.
+    log "2.6/4 mirroring baseline casino images GHCR->Gitea (crane copy — best-effort)"
+    bash "$GITOPS_DIR/install/mirror-baseline-images.sh" \
+      || log "WARN: mirror-baseline-images.sh returned non-zero (continuing — see its summary above)"
+
     log "3/4 installing Argo CD"
     bash "$GITOPS_DIR/install/install-argocd.sh"
 
