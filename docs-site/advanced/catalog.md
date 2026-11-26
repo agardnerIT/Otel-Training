@@ -36,7 +36,10 @@ to build:
     All assume the base environment is up and
     [M0](../setup.md) / the [M1 orientation](../module-1.md) have wired
     `opencode` and its skills
-    (`opencode debug skill` lists `otel-*` and `dtctl`). **A2**, **A3**, **A4**
+    (`opencode debug skill` lists `otel-*` and `dtctl`). The **C1–C4** and
+    **D1** `dtctl` exercises also need dtctl pointed at your tenant — the
+    bootstrap does this, but if one errors with **`no context`** see
+    [M0 → Configure dtctl](../setup.md#configure-dtctl). **A2**, **A3**, **A4**
     and **A5** build on the span pattern from
     [M2](../module-2.md) (**A5** also spans the slots →
     scoring hop from [A1](catalog-a1-broken-trace.md)); **C1**, **C2** and **C3**

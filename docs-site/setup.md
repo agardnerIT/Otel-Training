@@ -294,6 +294,50 @@ it is **derived from `DT_TENANT`** (`<id>.live.…` → `<id>.apps.…`).
 live authenticated call, so a bad token or missing scope fails there, loudly,
 instead of mid-lab.
 
+#### Configure dtctl
+
+The bootstrap configures this for you — `verify-dtctl.sh` (run by `postCreate`)
+persists a `training` context to `~/.config/dtctl/config` pointing dtctl at your
+tenant's **apps** host. You only touch this if a dtctl lab reports
+**`no context`** (`dtctl get dashboards` ... `no current context`), which means
+the context was never written (e.g. the codespace was created before `DT_TENANT`
+was set). Fix it in one of two ways:
+
+**Re-run the bootstrap step (preferred):**
+
+```bash
+bash .devcontainer/bootstrap/verify-dtctl.sh   # idempotent; (re)writes the context
+```
+
+**Or configure it by hand.** `dtctl` talks to the **apps** host — derive it from
+`DT_TENANT` (`<id>.live.…` → `<id>.apps.…`), then set the context. The token step
+needs a `DT_PLATFORM_TOKEN` (`dt0s16`, scopes above); **don't** reuse the
+operator/ingest tokens — they carry different scopes and dtctl will 403:
+
+```bash
+# derive the apps URL from DT_TENANT (or use $DT_PLATFORM_URL if you set it)
+APPS_URL="${DT_PLATFORM_URL:-${DT_TENANT/.live./.apps.}}"
+
+# point dtctl at the environment (no token needed just to set the context)
+dtctl config set-context training --environment "$APPS_URL" --safety-level readwrite-all
+dtctl config use-context training
+
+# attach credentials once you have a DT_PLATFORM_TOKEN
+dtctl config set-credentials training-token --token "$DT_PLATFORM_TOKEN"
+dtctl config set-context training --environment "$APPS_URL" \
+  --token-ref training-token --safety-level readwrite-all
+dtctl config use-context training
+```
+
+Verify it took: `dtctl config get-contexts` lists `training` as current, and
+`dtctl get dashboards -o toon --plain` returns without a `no context` error.
+
+Without `DT_PLATFORM_TOKEN` the context still exists (dtctl knows *where* it is),
+so the `no context` wall is gone — but read/apply calls need the credentials line
+above. (The bootstrap prints this exact snippet when it configures an
+environment-only context.) See also
+[Troubleshooting → dtctl `no context`](troubleshooting.md#dtctl-no-context).
+
 Two variables below are **not** Dynatrace tokens — they belong to the `opencode`
 LLM dispenser (unrelated to the DT tenant). They are **required from M0 on**:
 M0–M10 are opencode-first, and the agent is useless without its proxy key.
