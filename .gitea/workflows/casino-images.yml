@@ -10,6 +10,13 @@ name: Build casino images (Gitea CI)
 # (`IMAGE_SOURCE=gitea`, ISI-7640) deploys. Together they close the attendee
 # "edit code -> CI builds image -> redeploy" loop with NO dependency on ghcr.io.
 #
+# Redeploy semantics (ISI-7882 / ISI-7867 gap 3): each merge builds a per-commit
+# :<sha> tag and the `redeploy` job writes that tag back into k8s/*.yaml and
+# commits it to main. That git change — not a re-pushed pinned tag — is what Argo
+# CD syncs, so every merged casino edit actually rolls new pods (running image
+# flips to <sha>). The write-back is [skip ci] + k8s/** is not a trigger path, so
+# there is no CI -> commit -> CI loop.
+#
 # This file is seeded INTO the casino/casino Gitea repo by gitops/install/
 # seed-gitea.sh, alongside apps/casino/ (the build context) and
 # deploy/casino/IMAGE_VERSION (the tag source of truth). The GHCR GitHub Actions
@@ -109,15 +116,105 @@ jobs:
           echo "${{ secrets.GITEA_TOKEN }}" \
             | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
 
+      # Build once, tag three ways, push all three (ISI-7882 / redeploy semantics):
+      #   :<sha>          the DEPLOYABLE ref — unique per commit, so the k8s
+      #                   write-back below changes git content and Argo CD rolls
+      #                   the newly built image instead of re-syncing the same
+      #                   pinned :<IMAGE_VERSION> string (which is a no-op to Argo).
+      #   :latest         moving convenience ref.
+      #   :<IMAGE_VERSION> human-readable release tag (optional; the seed render
+      #                   pins manifests to it before the first CI run).
+      # GITHUB_SHA short form is computed the SAME way the redeploy job recomputes
+      # it, so the tag CI pushes and the tag written into k8s/ always match.
       - name: Build and push
         run: |
           set -eux
           IMG="$REGISTRY/$OWNER/vegasapp-${{ matrix.service }}"
           TAG="${{ steps.tag.outputs.value }}"
+          SHA="${GITHUB_SHA:0:7}"
           docker build \
             --file "apps/casino/${{ matrix.service }}/Dockerfile" \
+            --tag "$IMG:$SHA" \
             --tag "$IMG:$TAG" \
             --tag "$IMG:latest" \
             apps/casino
+          docker push "$IMG:$SHA"
           docker push "$IMG:$TAG"
           docker push "$IMG:latest"
+
+  # ---------------------------------------------------------------------------
+  # Redeploy write-back (ISI-7882 / ISI-7867 gap 3).
+  #
+  # Argo CD (gitops/argocd/casino-application.yaml) syncs path `k8s` of
+  # casino/casino and redeploys ONLY when the git content changes. Re-pushing the
+  # same :<IMAGE_VERSION> tag string is a no-op to Argo — "the same release." So
+  # after all 7 images are built and pushed under the per-commit :<sha> tag, this
+  # job rewrites the 7 vegasapp-* image refs in k8s/*.yaml to :<sha> and commits
+  # it back to main. THAT commit is what Argo syncs -> new pods roll with the
+  # newly built image (observable: running tag flips to <sha>, not a repeated
+  # 0.xx).
+  #
+  # Runs only if every matrix build succeeded (needs: build) — we never bump the
+  # manifests to a <sha> whose images are not all pushed.
+  #
+  # No infinite loop: the trigger paths above are apps/casino/** and this
+  # workflow file only — k8s/** is NOT a trigger path — AND the write-back commit
+  # carries [skip ci] (Gitea's default SKIP_WORKFLOW_STRINGS). Belt and
+  # suspenders so neither a path-filter change nor a skip-string change alone can
+  # reopen a CI -> commit -> CI loop.
+  redeploy:
+    name: write-back k8s tag
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Bump the tag on the 7 deployed vegasapp-* image refs to the per-commit
+      # <sha>. Plain sed, no kustomize — the same plain-YAML contract the seed
+      # render (deploy/casino/render-images.sh) and ISI-6794 manifests keep so an
+      # attendee can read k8s/ end to end. The service name is enumerated exactly
+      # (the 7 matrix services) and the registry HOST is left untouched, so the
+      # rewrite is robust whether the refs are the Gitea alias
+      # (gitea.local:30001/casino/vegasapp-*) or the GHCR baseline
+      # (ghcr.io/<owner>/otel-training/vegasapp-*). Only the :<tag> suffix moves.
+      - name: Bump k8s image tags to the built SHA
+        id: bump
+        run: |
+          set -eu
+          SHA="${GITHUB_SHA:0:7}"
+          SERVICES='frontend|slots|blackjack|dashboard|roulette|dice|scoring'
+          # [A-Za-z0-9._-]+ matches a Docker tag and stops at the closing quote /
+          # whitespace, so the host prefix and quoting are preserved.
+          sed -E -i \
+            "s#(vegasapp-(${SERVICES})):[A-Za-z0-9._-]+#\1:${SHA}#g" \
+            k8s/*.yaml
+          if git diff --quiet -- k8s; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "k8s/ already pins vegasapp-* to :${SHA} — nothing to write back."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff -- k8s
+          fi
+
+      # Commit + push the tag bump as the triggering actor, back onto main. The
+      # auto-provisioned secrets.GITEA_TOKEN (same token the build job logs into
+      # the registry with) has write to this repo. Push to the SAME server
+      # checkout cloned from (GITHUB_SERVER_URL) so the host is always reachable
+      # from inside the runner, whatever the instance URL is.
+      - name: Commit and push write-back
+        if: steps.bump.outputs.changed == 'true'
+        run: |
+          set -eu
+          SHA="${GITHUB_SHA:0:7}"
+          git config user.name  "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.gitea.local"
+          git add k8s
+          git commit -q -m "ci: redeploy casino at ${SHA} [skip ci]"
+          SERVER_URL="${GITHUB_SERVER_URL}"
+          SCHEME="${SERVER_URL%%://*}"
+          HOSTPATH="${SERVER_URL#*://}"
+          HOSTPATH="${HOSTPATH%/}"
+          PUSH_URL="${SCHEME}://${{ github.actor }}:${{ secrets.GITEA_TOKEN }}@${HOSTPATH}/${GITHUB_REPOSITORY}.git"
+          git push "$PUSH_URL" "HEAD:${{ github.ref_name }}"
+          echo "wrote back k8s/ tag bump to ${SHA} on ${{ github.ref_name }} -> Argo CD will roll the new image."
